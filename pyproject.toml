@@ -1,0 +1,35 @@
+[project]
+name = "litestar-pulse"
+version = "0.1.0"
+description = "Add-on library for Litestar to manage users, groups, and permissions"
+readme = "README.md"
+authors = [
+    { name = "Hidayat Trimarsanto", email = "trimarsanto@gmail.com" }
+]
+license = "MPL-2.0"
+requires-python = ">=3.12"
+dependencies = [
+    "advanced-alchemy[cli,uuid]>=1.8.2",
+    "aiosqlite>=0.22.0",
+    "black>=25.12.0",
+    "granian[reload]>=2.6.0",
+    "htpy>=25.12.0",
+    "ipdb>=0.13.13",
+    "litestar[jwt,mako,sqlalchemy,standard,uuid]>=2.19.0",
+    "nest-asyncio>=1.6.0",
+    "passlib[argon2]>=1.7.4",
+    "snowflake-id>=1.0.2",
+]
+
+
+[project.entry-points."litestar.commands"]
+pulsemgr = "litestar_pulse.cli.commands:pulsemgr"
+
+[project.scripts]
+pulsemgr = "litestar_pulse.cli.commands:main"
+
+[build-system]
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"
+
+# EOF
