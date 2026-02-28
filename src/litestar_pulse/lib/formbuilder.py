@@ -92,8 +92,8 @@ class _InputFieldProxy:
     @cached_property
     def form_input(self) -> f.BaseInput:
         return self.input_field.forminput(
-            label=self.input_field.label,
-            inputfield=self,
+            _label=self.input_field.label,
+            _inputfield=self,
         )
 
     def opts(self, col=None, **kwargs: Any) -> f.BaseInput:
@@ -106,9 +106,9 @@ class _InputFieldProxy:
 
 class _ForeignKeyInputFieldProxy(_InputFieldProxy):
 
-    def opts(self, option_callback=None, **kwargs: Any) -> f.BaseInput:
-        if option_callback is not None:
-            self.form_input.option_callback = option_callback
+    def opts(self, _option_callback=None, **kwargs: Any) -> f.BaseInput:
+        if _option_callback is not None:
+            self.form_input.option_callback = _option_callback
         self.form_input.opts(**kwargs)
         return self
 
@@ -116,9 +116,12 @@ class _ForeignKeyInputFieldProxy(_InputFieldProxy):
         obj = getattr(self.owner_instance, "obj", None)
         data = getattr(self.owner_instance, "data")
         if self.name in data:
-            if self.input_field.nullable and data[self.name] == "":
+            # if not self.input_field.required and data[self.name] == "":
+            #    return (None, "")
+            value = data[self.name]
+            if value == "":
                 return (None, "")
-            value = int(data[self.name])
+            value = int(value)
             text = None
             if value is not None and self.input_field.foreignkey_for is not None:
                 related_obj = getattr(obj, self.input_field.foreignkey_for, None)
@@ -132,7 +135,7 @@ class _ForeignKeyInputFieldProxy(_InputFieldProxy):
             if value is not None and self.input_field.foreignkey_for is not None:
                 related_obj = getattr(obj, self.input_field.foreignkey_for)
                 text = getattr(related_obj, self.input_field.text_from, "")
-            print(f"ForeignKeyField object={obj} get_value: value={value}, text={text}")
+            # print(f"ForeignKeyField object={obj} get_value: value={value}, text={text}")
             return (value, text)
         return (None, "")
 
@@ -173,9 +176,9 @@ class _EnumKeyInputFieldProxy(_InputFieldProxy):
 class _DBEnumKeyInputFieldProxy(_InputFieldProxy):
     """this class is for ForeignKeyField that reference EnumKey"""
 
-    def opts(self, option_callback=None, **kwargs: Any) -> f.BaseInput:
-        if option_callback is not None:
-            self.form_input.option_callback = option_callback
+    def opts(self, _option_callback=None, **kwargs: Any) -> f.BaseInput:
+        if _option_callback is not None:
+            self.form_input.option_callback = _option_callback
         self.form_input.opts(**kwargs)
         return self
 
@@ -261,7 +264,7 @@ class InputField:
 
     @cached_property
     def _forminput(self) -> f.BaseInput:
-        return self.forminput(label=self.label, inputfield=self)
+        return self.forminput(_label=self.label, _inputfield=self)
 
 
 class StringField(InputField):
@@ -390,12 +393,14 @@ class ForeignKeyField(InputField):
         required: bool = False,
         foreignkey_for: str | None = None,
         text_from: str | None = None,
-        validator: v.Validator = v.Int,
+        validator: v.Validator = v.ForeignKeyInt,
         forminput: f.FormField = f.SelectInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
             required=required,
+            foreignkey_for=foreignkey_for,
+            text_from=text_from,
             **kwargs,
         )
         super().__init__(
@@ -704,7 +709,7 @@ class ModelForm:
         if any(errors):
             for err_msg, field_name in errors:
                 el = form.get_element(field_name)
-                el.opts(error=err_msg)
+                el.opts(_error=err_msg)
                 print(f"Set error for field {field_name}: {err_msg}")
 
         return dict(
