@@ -1,0 +1,93 @@
+/* color options for background:
+
+	#f0f1ee
+	rgba(255,250,245,1)
+	rgba(246,241,236,1)
+	rgba(236,232,227,1);
+	#f9f5ea #dcd7ca #2873bf
+
+*/
+
+body {
+/* Show it is fixed to the top */
+	min-height: 75rem;
+	/* padding-top: 4.5rem; */
+	font-family: 'Source Sans 3';
+	font-size: 0.875rem;
+	color: rgba(64, 62, 62, 0.75);
+	/* background-color: #f0f1ee !important; */
+	background-color: rgba(245, 240, 235, 1) !important;
+}
+
+.dropdown-menu {
+	font-size: 0.875rem;
+}
+
+.bg-red {
+	background-color: #9a141e;
+}
+
+.bg-greenish {
+	background-color: #17a2b8 !important;
+}
+
+.navbar-brand {
+	font-size: 1rem;
+}
+
+.navbar-dark .navbar-nav .nav-link {
+    color: rgba(255,255,255,.75);
+}
+
+/*
+@media (min-width: 768px) {
+  .form-group.row > .col-form-label {
+    text-align: right;
+    justify-content: flex-end;
+  }
+}
+*/
+
+div.form-inline label.col-md-4 {
+  justify-content: flex-end;
+}
+
+div.form-inline label.col-md-3 {
+  justify-content: flex-end; 
+}
+
+div.form-inline label.col-md-2 {
+  justify-content: flex-end; 
+}
+
+div.form-inline label.col-md-1 {
+  justify-content: flex-end; 
+}
+
+div.form-group {
+	margin-bottom: 0.25rem;
+}
+
+.line-separator {
+    background-color: #ccc;
+    flex-grow: 5;
+    height: 2px
+}
+
+.popover {
+  max-width: 100%;
+}
+
+.select2-container .select2-selection--single {
+	height: 38px !important;
+}
+
+.select2-container .select2-selection--single .select2-selection__rendered {
+	padding-top: 4px !important;
+	padding-bottom: 4px !important;
+}
+
+.jexcel tbody tr:nth-child(even) {
+  background-color: #EEE9F1 !important;
+}
+

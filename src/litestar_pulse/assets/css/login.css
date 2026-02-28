@@ -1,0 +1,119 @@
+:root {
+    --lp-login-bg: #f2f7fb;
+    --lp-card-shadow: 0 0 5px 0 rgba(43, 43, 43, .1), 0 11px 6px -7px rgba(43, 43, 43, .1);
+    --lp-card-radius: 0.3125rem;
+    --lp-primary: #4099ff;
+    --lp-primary-hover: #2475d9;
+    --lp-input-border: #ced4da;
+}
+
+body {
+    background-color: var(--lp-login-bg);
+}
+
+.login-block {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    padding: clamp(2rem, 5vw, 4rem) 0;
+}
+
+.login-block .auth-box {
+    margin: 0 auto;
+    max-width: 520px;
+}
+
+.card {
+    border-radius: var(--lp-card-radius);
+    box-shadow: var(--lp-card-shadow);
+    border: none;
+    background-color: #fff;
+    transition: box-shadow .3s ease-in-out;
+}
+
+.card:hover {
+    box-shadow: 0 8px 20px rgba(43, 43, 43, .12);
+}
+
+.card .card-body {
+    padding: 1.5rem;
+}
+
+.heading {
+    font-size: 1.4rem;
+    font-weight: 600;
+}
+
+.form-material .form-control {
+    border-radius: var(--bs-border-radius, .375rem);
+    border: 1px solid var(--lp-input-border);
+    padding: .65rem .95rem;
+    font-size: 1rem;
+    background-color: #fff;
+    box-shadow: none;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.form-material .form-control:focus {
+    border-color: var(--lp-primary);
+    box-shadow: 0 0 0 .2rem rgba(64, 153, 255, .15);
+}
+
+.btn {
+    border-radius: var(--bs-border-radius, .375rem);
+    text-transform: capitalize;
+    font-size: 1rem;
+    font-weight: 500;
+    padding: var(--bs-btn-padding-y, .65rem) var(--bs-btn-padding-x, 1.2rem);
+}
+
+.btn-md {
+    padding: .65rem 1.35rem;
+    font-size: .95rem;
+    line-height: 1.4;
+}
+
+.btn-primary {
+    --bs-btn-bg: var(--lp-primary);
+    --bs-btn-border-color: var(--lp-primary);
+    --bs-btn-hover-bg: var(--lp-primary-hover);
+    --bs-btn-hover-border-color: var(--lp-primary-hover);
+    --bs-btn-focus-shadow-rgb: 64, 153, 255;
+    color: #fff;
+}
+
+#infoMessage p {
+    color: #d32f2f !important;
+}
+
+.btn-google {
+    color: #545454;
+    background-color: #fff;
+    box-shadow: 0 1px 2px 1px #ddd;
+    border: 1px solid #ddd;
+}
+
+.btn-google:hover {
+    background-color: #f7f7f7;
+}
+
+.or-container {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.5rem 0;
+    color: #adb5bd;
+}
+
+.line-separator {
+    background-color: currentColor;
+    flex: 1;
+    height: 1px;
+}
+
+.or-label {
+    flex: 0;
+    text-transform: uppercase;
+    font-size: .8rem;
+    letter-spacing: .12em;
+}
