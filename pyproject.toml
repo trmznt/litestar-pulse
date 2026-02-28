@@ -2,7 +2,7 @@
 name = "litestar-pulse"
 version = "0.1.0"
 description = "Add-on library for Litestar to manage users, groups, and permissions"
-readme = "README.md"
+readme = "README.rst"
 authors = [
     { name = "Hidayat Trimarsanto", email = "trimarsanto@gmail.com" }
 ]
