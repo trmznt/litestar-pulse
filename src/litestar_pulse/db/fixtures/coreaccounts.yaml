@@ -1,0 +1,37 @@
+UserDomain:
+  - domain: _system_
+    desc: System domain
+  - domain: _LOCAL_
+    desc: Local domain
+
+
+Group:
+  - name: Sysadmins
+    desc: System Administrators
+  - name: Users
+    desc: Regular Users
+
+
+User:
+  - login: sysadm
+    email: sysadm@localhost
+    name: System Administrator
+    institution: ""
+    password: "?" # indicates to randomly generate password
+    domain: _LOCAL_
+    primary_group: Sysadmins
+    groups:
+      - name: Sysadmins
+        role: A
+      - name: Users
+        role: A
+  - login: anonymous
+    email: anonymous@localhost
+    name: Anonymous User
+    institution: ""
+    password: "{X}" # indicates no password (no login possible)
+    domain: _LOCAL_
+    primary_group: Users
+    groups:
+      - Users
+
