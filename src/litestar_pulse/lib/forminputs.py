@@ -249,7 +249,7 @@ class BaseInput(t.singletag):
 
     def r(self) -> Markup:
 
-        elements = t.element()[
+        elements = t.fragment()[
             self.render_label(),
             self.render_input(),
             self.info_text(),
@@ -358,7 +358,7 @@ class CheckboxGroupInput(BaseInput):
         return super().render_label()
 
     def render_input(self, value=None) -> Markup | t.htmltag:
-        return t.element()[
+        return t.fragment()[
             *[item.r() for item in self.contents if isinstance(item, CheckboxInput)]
         ]
 

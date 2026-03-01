@@ -32,7 +32,7 @@ class EnumKeyForm(fb.ModelForm):
     is_category = fb.CheckboxField(label="Category", required=False)
 
     async def set_layout(self, controller: Any = None) -> t.htmltag:
-        form_layout = t.element()[
+        form_layout = t.fragment()[
             f.fieldset(name="main")[
                 f.InlineInput()[self.key.opts(_offset=2),],
                 self.desc.opts(_offset=2, _size=5),

@@ -48,7 +48,7 @@ class UserForm(fb.ModelForm):
     )
 
     async def set_layout(self, controller: Any = None) -> t.htmltag:
-        form_layout = t.element()[
+        form_layout = t.fragment()[
             f.fieldset(name="main")[
                 f.InlineInput()[
                     self.domain_id.opts(

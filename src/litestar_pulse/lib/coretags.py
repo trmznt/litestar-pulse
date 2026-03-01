@@ -215,7 +215,7 @@ class htmltag(metaclass=_SelfInstantiating):
         return self.elements[identifier]
 
 
-class element(htmltag):
+class fragment(htmltag):
     """non-tag container HTML element representation."""
 
     def r(self) -> Markup:

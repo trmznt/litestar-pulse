@@ -713,7 +713,7 @@ class ModelForm:
                 print(f"Set error for field {field_name}: {err_msg}")
 
         return dict(
-            html=t.element()[
+            html=t.fragment()[
                 self.header(),
                 form,
             ],
@@ -726,7 +726,7 @@ class ModelForm:
         """
         Get the header for display purposes
         """
-        html = t.element()[
+        html = t.fragment()[
             t.h2()[self.model_name],
             t.div()[
                 t.span()[t.b()[" ID: "], self.obj.id if self.obj else ""],
