@@ -76,7 +76,7 @@ class DBConfig:
     )
     """Optionally ping database before fetching a session from the connection pool."""
     URI: str = field(
-        default_factory=lambda: get_env("DB_URI", "sqlite+aiosqlite:///db.sqlite3")
+        default_factory=lambda: get_env("DB_URI", "sqlite+aiosqlite:///db/db.sqlite3")
     )
     """SQLAlchemy Database URL."""
     MIGRATION_CONFIG: str = field(
