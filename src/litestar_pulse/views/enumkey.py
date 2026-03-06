@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from ..db.models.enumkey import EnumKey
 from ..lib import roles as r
-from .modelview import ModelForm, LPModelView, form_submit_bar, Request, ct, f, fb, t, v
+from .modelview import LPModelView, form_submit_bar, Request, ct, f, fb, t, v
 
 
 class EnumKeyForm(fb.ModelForm):
@@ -28,21 +28,19 @@ class EnumKeyForm(fb.ModelForm):
         required=False,
         foreignkey_for="category",
         text_from="key",
+        option_async_callback=lambda controller: controller.dbh.repo.EnumKey.get_all_categories_for_options,
     )
     is_category = fb.CheckboxField(label="Category", required=False)
 
     async def set_layout(self, controller: Any = None) -> t.htmltag:
         form_layout = t.fragment()[
             f.fieldset(name="main")[
-                f.InlineInput()[self.key.opts(_offset=2),],
-                self.desc.opts(_offset=2, _size=5),
-                f.CheckboxGroupInput(label="Options", _offset=2)[
+                f.InlineInput()[self.key.opts(offset=2),],
+                self.desc.opts(offset=2, size=5),
+                f.CheckboxGroupInput(label="Options", offset=2)[
                     self.is_category.opts(),
                 ],
-                self.category_id.opts(
-                    _offset=2,
-                    _option_callback=controller.dbh.repo.EnumKey.get_all_categories_for_options,
-                ),
+                self.category_id.opts(offset=2),
             ]
         ]
 

@@ -11,13 +11,13 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tagato import tags as t
+
 from litestar import Controller, Response, get, Request, MediaType
 
 from litestar_pulse.views.baseview import LPController
 from litestar_pulse.lib.template import Template
 from litestar_pulse.templates.pages_b53 import base
-
-import htpy as t
 
 
 class HomeView(LPController):
@@ -35,16 +35,16 @@ class HomeView(LPController):
 
         user = self.req.user
 
-        content = t.div()[
-            t.h1()["litestar-pulse Library"],
+        content = t.div[
+            t.h1["litestar-pulse Library"],
             (
-                t.p()["Your are logged in as: ", t.strong()[user.login]]
+                t.p["Your are logged in as: ", t.strong[user.login]]
                 if user
-                else t.p()["You are not logged in."]
+                else t.p["You are not logged in."]
             ),
         ]
 
-        return {"title": "Litestar Pulse Library", "body": content}
+        return {"title": "Litestar Pulse Library", "html": content}
 
         return Template(template_name="lp_base.mako", content={"body": str(content)})
 
@@ -61,8 +61,6 @@ class HomeView(LPController):
         self.init_view(request, db_session, transaction)
         context = await self.index()
         return Template(template_name="lp/home.mako", context=context)
-
-        return Response(content=str(content), media_type="text/html")
 
 
 # EOF

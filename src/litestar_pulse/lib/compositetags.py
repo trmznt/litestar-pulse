@@ -9,7 +9,7 @@ __license__ = "MPL-2.0"
 
 # this module is based on https://github.com/trmznt/rhombus/blob/master/rhombus/lib/tags.py
 
-from . import coretags as t
+from tagato import tags as t
 
 
 def datetime(dt):
@@ -18,7 +18,7 @@ def datetime(dt):
     return t.time(datetime=dt.isoformat())[dt.isoformat()]
 
 
-class submit_bar(t.htmltag):
+class submit_bar(t.singletag):
 
     def __init__(self, label="Save", value="save"):
         super().__init__()
@@ -43,7 +43,7 @@ class submit_bar(t.htmltag):
         return html.r()
 
 
-class custom_submit_bar(t.htmltag):
+class custom_submit_bar(t.singletag):
 
     def __init__(self, *args):
         # args: ('Save', 'save'), ('Continue', 'continue')
@@ -101,7 +101,7 @@ class selection_bar(object):
         hiddens=None,
         name="",
         delete_label="Delete",
-        delete_value="delete",
+        delete_value="delete-confirmation",
     ):
         super().__init__()
         self.prefix = prefix

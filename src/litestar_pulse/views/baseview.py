@@ -26,9 +26,11 @@ from litestar.exceptions import NotAuthorizedException
 from litestar_pulse.config.app import logger
 from litestar_pulse.db.handler import handler_factory
 from litestar_pulse.lib.template import Template
-from litestar_pulse.lib import coretags as t
 
 from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from tagato import tags as t
 
 
 # TODO:
@@ -154,7 +156,7 @@ class LPBaseView(LPController):
     plain_template_file = "lp/generics/page.mako"
     form_template_file = "lp/generics/formpage.mako"
 
-    async def index(self) -> dict[str, t.htmltag | str]:
+    async def index(self) -> dict[str, t.Tag | str]:
         """
         Render index page
         """
@@ -333,19 +335,19 @@ class LPBaseView(LPController):
         )
         return Redirect(path=redirect_url)
 
-    async def delete(self, dbid: int | None = None) -> Any:
+    async def delete(self, dbid: int | None = None) -> Response[str] | Template:
         """
         Render delete by ID page
         """
         raise NotImplementedError
 
-    @get(path="/delete-confirmation", name="delete-confirmation")
-    async def delete_confirmation_html(
+    @post(path="/action", name="action", status_code=HTTP_303_SEE_OTHER)
+    async def action_html(
         self,
         request: Request,
         db_session: AsyncSession,
         transaction: AsyncSession,
-    ) -> Template:
+    ) -> Response[str] | Template:
         """
         Render delete confirmation page
         """
@@ -353,7 +355,10 @@ class LPBaseView(LPController):
             "Rendering delete-confirmation page for %s", self.__class__.__name__
         )
         self.init_view(request, db_session, transaction)
-        content = await self.delete_confirmation()
+        form_data = await request.form()
+        return await self.action(form_data)
+        content = await self.action(form_data)
+        return Response(content=str(content), media_type="text/html")
         return Template(
             template_name=self.plain_template_file,
             context={
@@ -362,9 +367,9 @@ class LPBaseView(LPController):
             },
         )
 
-    async def delete_confirmation(self) -> Any:
+    async def action(self, data: dict[str, Any]) -> Any:
         """
-        Render delete confirmation page
+        Handle action request
         """
         raise NotImplementedError
 

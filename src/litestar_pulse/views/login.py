@@ -12,6 +12,8 @@ import msgspec
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tagato import tags as t
+
 from litestar import Response, get, post, Request
 from litestar.response import Redirect
 from litestar.plugins.flash import flash
@@ -20,8 +22,7 @@ from litestar_pulse.db.models.account import User
 from litestar_pulse.lib.auth import log_user_in
 from litestar_pulse.views.baseview import Controller
 from litestar_pulse.lib.template import Template
-from litestar_pulse.lib import forminputs as fb
-import htpy as t
+
 
 from typing import TYPE_CHECKING
 
@@ -78,8 +79,6 @@ class LoginView(Controller):
         flash(request, "Login successful!", category="success")
         return Redirect(path=came_from, status_code=303)
 
-        return Response(content=str(html), media_type="text/html")
-
     @get("/logout")
     async def logout(self, request: Request) -> Template:
         """
@@ -87,13 +86,13 @@ class LoginView(Controller):
         """
         request.session.clear()
 
-        body = t.div()[
-            t.h1()["Logout Successful"],
-            t.p()["You have been logged out."],
+        body = t.div[
+            t.h1["Logout Successful"],
+            t.p["You have been logged out."],
         ]
 
         return Template(
-            template_name="lp_base.mako", context={"title": "Logout", "body": body}
+            template_name="lp/base.mako", context={"title": "Logout", "html": body}
         )
 
     @get("/login-remote")

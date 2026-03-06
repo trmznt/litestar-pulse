@@ -7,7 +7,7 @@ __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
 
-from typing import Any, Self
+from typing import Any, Self, Callable, Awaitable
 from dataclasses import dataclass
 from functools import cached_property
 
@@ -19,9 +19,9 @@ from sqlalchemy import exc
 
 from litestar import Request
 
+from tagato import tags as t, formfields as f
+
 from . import validators as v
-from . import forminputs as f
-from . import coretags as t
 from . import compositetags as ct
 
 from ..db.models.enumkey import EnumKeyRegistry
@@ -73,6 +73,9 @@ class _InputFieldProxy:
     name: str  # the name of the field
     input_field: InputField  # the InputField instance
 
+    def get_name(self) -> str:
+        return self.name
+
     def get_value(self) -> Any:
         obj = getattr(self.owner_instance, "obj", None)
         data = getattr(self.owner_instance, "data")
@@ -83,6 +86,12 @@ class _InputFieldProxy:
             return getattr(obj, self.name, "") or ""
         return ""
 
+    def get_options(self) -> list[tuple[int, str]]:
+        return []
+
+    def is_required(self) -> bool:
+        return self.input_field.validator.required
+
     def validate(self, value: Any, obj: Any | None = None) -> tuple[bool, str]:
         return self.input_field.validator.validate(value, obj=obj)
 
@@ -92,12 +101,12 @@ class _InputFieldProxy:
     @cached_property
     def form_input(self) -> f.BaseInput:
         return self.input_field.forminput(
-            _label=self.input_field.label,
-            _inputfield=self,
+            label=self.input_field.label,
+            input_provider=self,
         )
 
-    def opts(self, col=None, **kwargs: Any) -> f.BaseInput:
-        self.form_input.opts(col=col, **kwargs)
+    def opts(self, **kwargs: Any) -> f.BaseInput:
+        self.form_input.opts(**kwargs)
         return self
 
     def __tag__(self) -> t.Tag:
@@ -106,9 +115,9 @@ class _InputFieldProxy:
 
 class _ForeignKeyInputFieldProxy(_InputFieldProxy):
 
-    def opts(self, _option_callback=None, **kwargs: Any) -> f.BaseInput:
-        if _option_callback is not None:
-            self.form_input.option_callback = _option_callback
+    def opts(self, option_callback=None, **kwargs: Any) -> f.BaseInput:
+        if option_callback is not None:
+            self.form_input.option_callback = option_callback
         self.form_input.opts(**kwargs)
         return self
 
@@ -176,9 +185,9 @@ class _EnumKeyInputFieldProxy(_InputFieldProxy):
 class _DBEnumKeyInputFieldProxy(_InputFieldProxy):
     """this class is for ForeignKeyField that reference EnumKey"""
 
-    def opts(self, _option_callback=None, **kwargs: Any) -> f.BaseInput:
-        if _option_callback is not None:
-            self.form_input.option_callback = _option_callback
+    def opts(self, option_callback=None, **kwargs: Any) -> f.BaseInput:
+        if option_callback is not None:
+            self.form_input.option_callback = option_callback
         self.form_input.opts(**kwargs)
         return self
 
@@ -256,7 +265,14 @@ class InputField:
         :rtype: Any
         """
 
-        return self.proxy_class(instance, self._name, self)
+        if instance is None:
+            return self
+
+        proxy_cache = instance.__dict__.setdefault("_input_field_proxy_cache", {})
+        if self._name not in proxy_cache:
+            proxy_cache[self._name] = self.proxy_class(instance, self._name, self)
+
+        return proxy_cache[self._name]
 
     def opts(self, **kwargs: Any) -> Self:
         # this relay the options to forminput or validator
@@ -264,7 +280,26 @@ class InputField:
 
     @cached_property
     def _forminput(self) -> f.BaseInput:
-        return self.forminput(_label=self.label, _inputfield=self)
+        return self.forminput(label=self.label, input_provider=self)
+
+    async def _async_prerender_options(
+        self, controller: Any = None, field_proxy: _InputFieldProxy | None = None
+    ) -> None:
+        """Populate select options via optional async callback."""
+
+        form_input: f.BaseInput = (
+            field_proxy.form_input if field_proxy is not None else self._forminput
+        )
+
+        option_async_callback = getattr(self, "option_async_callback", None)
+        if form_input.options is None and option_async_callback is not None:
+            func = option_async_callback(controller)
+            form_input.options = await func()
+            if (
+                form_input.input_provider
+                and not form_input.input_provider.is_required()
+            ):
+                form_input.options = [("", "")] + form_input.options
 
 
 class StringField(InputField):
@@ -395,6 +430,9 @@ class ForeignKeyField(InputField):
         text_from: str | None = None,
         validator: v.Validator = v.ForeignKeyInt,
         forminput: f.FormField = f.SelectInput,
+        option_async_callback: (
+            Callable[[Any], Callable[[], Awaitable[list[tuple[str, str]]]]] | None
+        ) = None,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -411,6 +449,13 @@ class ForeignKeyField(InputField):
             text_from=text_from,
             proxy_class=_ForeignKeyInputFieldProxy,
         )
+        self.option_async_callback = option_async_callback
+
+    async def async_prerender(
+        self, controller: Any = None, field_proxy: _InputFieldProxy | None = None
+    ) -> None:
+        """Fetch options via callback if not already populated."""
+        await self._async_prerender_options(controller, field_proxy)
 
 
 class SelectField(InputField):
@@ -422,6 +467,9 @@ class SelectField(InputField):
         options: list[tuple[Any, str]] | None = None,
         option_callback: Any | None = None,
         validator: v.Validator = v.String,
+        options_async_callback: (
+            Callable[[Any], Callable[[], Awaitable[list[tuple[Any, str]]]]] | None
+        ) = None,
         forminput: f.FormField = f.SelectInput,
         **kwargs: Any,
     ) -> None:
@@ -431,7 +479,13 @@ class SelectField(InputField):
             option_callback=option_callback,
             **kwargs,
         )
-        super().__init__(label=label, validator=_validator, forminput=forminput)
+        super().__init__(
+            label=label,
+            validator=_validator,
+            forminput=forminput,
+            options=options,
+            options_async_callback=options_async_callback,
+        )
 
 
 class EnumKeyField(InputField):
@@ -442,7 +496,7 @@ class EnumKeyField(InputField):
         required: bool = False,
         foreignkey_for: str | None = None,
         validator: v.Validator = v.Int,
-        forminput: f.FormField = f.EnumKeyInput,
+        forminput: f.FormField = f.SelectInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -467,6 +521,9 @@ class DBEnumKeyField(InputField):
         foreignkey_for: str | None = "category",
         validator: v.Validator = v.Int,
         forminput: f.FormField = f.SelectInput,
+        option_async_callback: (
+            Callable[[Any], Callable[[], Awaitable[list[tuple[str, str]]]]] | None
+        ) = None,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -481,6 +538,13 @@ class DBEnumKeyField(InputField):
             text_from="key",
             proxy_class=_DBEnumKeyInputFieldProxy,
         )
+        self.option_async_callback = option_async_callback
+
+    async def async_prerender(
+        self, controller: Any = None, field_proxy: _InputFieldProxy | None = None
+    ) -> None:
+        """Fetch options via callback if not already populated."""
+        await self._async_prerender_options(controller, field_proxy)
 
 
 class CheckboxField(InputField):
@@ -649,12 +713,28 @@ class ModelForm:
             self.check_timestamp(self.obj, data)
         await self.update(self.obj, data, dbsession)
 
+    async def async_prerender(self, controller: Any = None) -> None:
+        """
+        This method can be overridden to do some asynchronous operation before
+        rendering the form
+        """
+
+        for field_name in self.__fields__:
+            field_proxy = getattr(self, field_name)
+            input_field = field_proxy.input_field
+            if isinstance(input_field, ForeignKeyField):
+                await input_field.async_prerender(controller, field_proxy=field_proxy)
+            elif isinstance(input_field, DBEnumKeyField):
+                await input_field.async_prerender(controller, field_proxy=field_proxy)
+
     async def html_form(
         self,
         request: Request,
         *,
         obj: Any = None,
+        # is this form is for readonly display, or for editing or creating new object
         readonly: bool = False,
+        # is Edit button should be shown when readonly is True
         editable: bool = False,
         controller: Any = None,
         errors: list[tuple[str, str]] = [],
@@ -672,7 +752,7 @@ class ModelForm:
             "Edit" if readonly else ("Update" if (obj and obj.id) else "Create")
         )
 
-        # generate form using tags_b53 module
+        # generate form using forminputs module
         form = f.HTMLForm(
             name=self.form_name,
             method="post",
@@ -680,7 +760,7 @@ class ModelForm:
                 self.controller_for_update,
                 dbid=obj.id if (obj and obj.id) else 0,
             ),
-            readonly=readonly,
+            _readonly=readonly,
         )[
             t.fieldset(name="hidden")[
                 f.HiddenInput(
@@ -704,12 +784,13 @@ class ModelForm:
             ],
         ]
 
-        await form.async_preprocess()
+        # await form.async_preprocess()
+        await self.async_prerender(controller=controller)
 
         if any(errors):
             for err_msg, field_name in errors:
                 el = form.get_element(field_name)
-                el.opts(_error=err_msg)
+                el.opts(error=err_msg)
                 print(f"Set error for field {field_name}: {err_msg}")
 
         return dict(

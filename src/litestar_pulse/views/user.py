@@ -10,15 +10,16 @@ __license__ = "MPL-2.0"
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from tagato import tags as t, formfields as f
+
 from litestar import Response, Request, get
+
 
 from litestar_pulse.lib import roles as r
 from litestar_pulse.db.models.account import User
-from .modelview import ModelForm, LPModelView, form_submit_bar
+from .modelview import LPModelView, form_submit_bar
 from ..lib import validators as v
-from ..lib import coretags as t
 from ..lib import compositetags as ct
-from ..lib import forminputs as f
 from ..lib import formbuilder as fb
 
 
@@ -32,7 +33,11 @@ class UserForm(fb.ModelForm):
     only = None
 
     domain_id = fb.ForeignKeyField(
-        label="Domain", required=True, foreignkey_for="domain", text_from="domain"
+        label="Domain",
+        required=True,
+        foreignkey_for="domain",
+        text_from="domain",
+        option_async_callback=lambda ctrl: ctrl.dbh.repo.UserDomain.get_all_for_options,
     )
     login = fb.AlphanumPlusField(label="Login", required=True, max_length=32)
     email = fb.EmailField(label="Email", required=True, max_length=48)
@@ -45,6 +50,7 @@ class UserForm(fb.ModelForm):
         required=True,
         foreignkey_for="primarygroup",
         text_from="name",
+        option_async_callback=lambda ctrl: ctrl.dbh.repo.Group.get_all_for_options,
     )
 
     async def set_layout(self, controller: Any = None) -> t.htmltag:
@@ -52,24 +58,24 @@ class UserForm(fb.ModelForm):
             f.fieldset(name="main")[
                 f.InlineInput()[
                     self.domain_id.opts(
-                        _offset=2,
-                        _option_callback=controller.dbh.repo.UserDomain.get_all_for_options,
+                        offset=2,
+                        # option_callback=controller.dbh.repo.UserDomain.get_all_for_options,
                     ),
-                    self.uuid.opts(_offset=1),
+                    self.uuid.opts(offset=1),
                 ],
                 f.InlineInput()[
-                    self.login.opts(_offset=2, _size=2),
-                    self.email.opts(_offset=1, _size=4),
+                    self.login.opts(offset=2, size=2),
+                    self.email.opts(offset=1, size=4),
                 ],
                 f.InlineInput()[
-                    self.lastname.opts(_offset=2, _size=3),
-                    self.firstname.opts(_offset=1, _size=3),
+                    self.lastname.opts(offset=2, size=3),
+                    self.firstname.opts(offset=1, size=3),
                 ],
-                self.institution.opts(_offset=2, _size=5),
+                self.institution.opts(offset=2, size=5),
                 self.primarygroup_id.opts(
-                    _offset=2,
-                    _size=3,
-                    _option_callback=controller.dbh.repo.Group.get_all_for_options,
+                    offset=2,
+                    size=3,
+                    # option_callback=controller.dbh.repo.Group.get_all_for_options,
                 ),
             ],
         ]
@@ -84,6 +90,11 @@ class UserForm(fb.ModelForm):
                 login = data["login"]
                 raise fb.ParseFormError(
                     [(f"Login '{login}' already exists.", "login")]
+                ) from error
+            if "users.email" in detail or "uq_users_email" in detail:
+                email = data["email"]
+                raise fb.ParseFormError(
+                    [(f"Email '{email}' already exists.", "email")]
                 ) from error
 
         super().process_integrity_error(error, data, dbsession)

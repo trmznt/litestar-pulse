@@ -15,6 +15,7 @@ from sqlalchemy.orm import object_session, joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from markupsafe import Markup, escape
+from tagato import tags as t, formfields as f
 
 from litestar import Response, Request, get
 from litestar.response import Redirect
@@ -22,13 +23,11 @@ from litestar.response import Redirect
 from ..lib.template import Template
 from ..lib.validators import Validator
 from ..lib.formbuilder import ParseFormError, TimeStampError
-from .baseview import LPBaseView
-
+from ..lib.popup import modal_delete
 from ..lib import validators as v
-from ..lib import coretags as t
 from ..lib import compositetags as ct
-from ..lib import forminputs as f
 from ..lib import formbuilder as fb
+from .baseview import LPBaseView
 
 
 def form_submit_bar(create: bool = False) -> t.Tag:
@@ -39,84 +38,6 @@ def form_submit_bar(create: bool = False) -> t.Tag:
     return ct.custom_submit_bar(
         ("Save", "save"), ("Save and continue editing", "save_edit")
     ).set_offset(2)
-
-
-class ModelForm:
-    """
-    Base class for model forms
-    """
-
-    model_type: Any
-
-    def __init_subclass__(cls, **kwargs) -> None:
-        """perform subclass-specific initialization here"""
-        super().__init_subclass__(**kwargs)
-
-    def __init__(self, obj: Any = None) -> None:
-        self.obj = obj
-        # if obj is not None:
-        #    for field_name in self.__fields__:
-        #        getattr(self, field_name).set_owner_instance(self)
-
-    def set_fields(self, obj: Any = None) -> None:
-        """
-        Set the form fields based on the given object
-        """
-        pass
-
-    def validate(self, obj: Any, data: dict[str, Any]) -> None:
-        """
-        Validate the form data based on the obj
-        """
-        error_lists = []
-
-        for field_name in self.__fields__:
-            if not hasattr(self, field_name):
-                continue
-            field_validator: Validator = getattr(self, field_name)
-            value = data.get(field_name, None)
-            result, err_msg = field_validator.validate(value, obj=obj)
-            if not result:
-                error_lists.append((f"Invalid {field_name}: {err_msg}", field_name))
-
-        if any(error_lists):
-            raise ParseFormError(error_lists)
-
-    async def update(
-        self, obj: Any, data: dict[str, Any], dbsession: AsyncSession
-    ) -> None:
-        """
-        Update the object with the form data, this assume that the data has been validated
-        """
-
-        if object_session(obj) is None:
-            raise ValueError("Object is not attached to a session")
-
-        for field_name in self.__fields__:
-            print("processing field:", field_name)
-            if not hasattr(self, field_name):
-                continue
-            if field_name not in data:
-                # field_name is not updated in the data
-                continue
-            field_validator: Validator = getattr(self, field_name)
-            value = data.get(field_name)
-            transformed_value = field_validator.transform(value)
-            print("updating field:", field_name, "with value:", transformed_value)
-            setattr(obj, field_name, transformed_value)
-
-        # get database session of the object and flush to save changes
-
-        await dbsession.flush()
-
-    async def validate_and_update(
-        self, data: dict[str, Any], dbsession: AsyncSession
-    ) -> None:
-        """
-        Validate and update the object with the form data
-        """
-        self.validate(self.obj, data)
-        await self.update(self.obj, data, dbsession)
 
 
 class LPModelView(LPBaseView):
@@ -255,6 +176,17 @@ class LPModelView(LPBaseView):
             return dict(html="Instance not found", __status_code__=404)
 
         form = self.model_form(instance)
+
+        ctx = self.compose_layout(
+            main_panel=await self.get_main_panel(instance),
+            top_panel=await self.get_top_panel(instance),
+            left_top_panel=await self.get_left_top_panel(instance),
+            right_top_panel=await self.get_right_top_panel(instance),
+            left_bottom_panel=await self.get_left_bottom_panel(instance),
+            right_bottom_panel=await self.get_right_bottom_panel(instance),
+        )
+
+        return ctx
 
         return await form.html_form(
             request=self.req,
@@ -409,6 +341,38 @@ class LPModelView(LPBaseView):
         )
         return Redirect(path=self.req.url_for(next_url, dbid=dbid))
 
+    async def action(self, data: dict[str, Any]) -> Any:
+        """
+        Handle the delete confirmation,
+        """
+        dbids = data.getall(f"{self.model_type.__name__.lower()}-ids")
+
+        match data.get("_method", None):
+
+            case "delete-confirmation":
+
+                return modal_delete(
+                    title=f"Confirm Deletion of {len(dbids)} {self.get_model_title()}(s)",
+                    content=t.fragment()[
+                        t.p()[
+                            "Are you sure you want to delete the selected %s? This action cannot be undone."
+                            % self.get_model_title()
+                        ],
+                        t.p()[t.strong()[f"IDs to be deleted: {', '.join(dbids)}"]],
+                    ],
+                    request=self.req,
+                )
+
+            case "delete-confirmed":
+                raise NotImplementedError(
+                    "delete action has not been implemented in the derived class, dbids to be deleted: %s"
+                    % dbids
+                )
+
+        raise NotImplementedError(
+            "_method argument is not recognized: %s" % data.get("_method", "None")
+        )
+
     # layoutting
 
     def get_model_title(self, as_url: bool = False) -> str | t.htmltag:
@@ -428,6 +392,143 @@ class LPModelView(LPBaseView):
             href=self.req.url_for(self.get_controller_handler_name() + "-index"),
             class_="navbar-brand",
         )[escape(title)]
+
+    def compose_layout(
+        self,
+        main_panel: dict[str, t.htmltag | str] | None = None,
+        top_panel: dict[str, t.htmltag | str] | None = None,
+        left_top_panel: dict[str, t.htmltag | str] | None = None,
+        right_top_panel: dict[str, t.htmltag | str] | None = None,
+        left_bottom_panel: dict[str, t.htmltag | str] | None = None,
+        right_bottom_panel: dict[str, t.htmltag | str] | None = None,
+        bottom_panel: dict[str, t.htmltag | str] | None = None,
+    ) -> dict[str, t.htmltag | str]:
+        """
+        Compose the layout for the view.
+        Each of dictionary parameters is expected to have an "html" key with the HTML content,
+        and optionally a "jscode", "pyscode" and "scriptlinks" key for additional
+        JavaScript code, pyscript code and script links to be included in the page.
+        """
+
+        jscode: list[str] = []
+        pyscode: list[str] = []
+        scriptlinks: list[str] = []
+
+        fragments = t.fragment()
+        if top_panel:
+            fragments.add(t.div(class_="row", name="top_panel")[top_panel["html"]])
+
+        if left_top_panel or right_top_panel:
+            fragments.add(
+                t.div(class_="row", name="left_right_top_panel")[
+                    t.div(class_="col-md-6", name="left_top_panel")[
+                        left_top_panel["html"] if left_top_panel else ""
+                    ],
+                    t.div(class_="col-md-6", name="right_top_panel")[
+                        right_top_panel["html"] if right_top_panel else ""
+                    ],
+                ]
+            )
+        if main_panel:
+            fragments.add(t.div(class_="row", name="main_panel")[main_panel["html"]])
+        if left_bottom_panel or right_bottom_panel:
+            fragments.add(
+                t.div(class_="row", name="left_right_bottom_panel")[
+                    t.div(class_="col-md-6", name="left_bottom_panel")[
+                        left_bottom_panel["html"] if left_bottom_panel else ""
+                    ],
+                    t.div(class_="col-md-6", name="right_bottom_panel")[
+                        right_bottom_panel["html"] if right_bottom_panel else ""
+                    ],
+                ]
+            )
+        if bottom_panel:
+            fragments.add(
+                t.div(class_="row", name="bottom_panel")[bottom_panel["html"]]
+            )
+
+        # collate the additional jscode, pyscode and scriptlinks from the panels
+        for panel in [
+            main_panel,
+            top_panel,
+            left_top_panel,
+            right_top_panel,
+            left_bottom_panel,
+            right_bottom_panel,
+            bottom_panel,
+        ]:
+            if panel is None:
+                continue
+            if "jscode" in panel:
+                jscode.append(panel["jscode"])
+            if "pyscode" in panel:
+                pyscode.append(panel["pyscode"])
+            if "scriptlinks" in panel:
+                scriptlinks.extend(panel["scriptlinks"])
+
+        return dict(
+            html=fragments, jscode=jscode, pyscode=pyscode, scriptlinks=scriptlinks
+        )
+
+    async def get_main_panel(self, instance: Any) -> dict[str, t.htmltag | str] | None:
+        """
+        Get the main panel for the given instance, by default it will show the instance detail
+        """
+
+        form = self.model_form(instance)
+
+        return await form.html_form(
+            request=self.req,
+            readonly=True,
+            editable=True,
+            controller=self,
+        )
+
+    async def get_top_panel(self, instance: Any) -> dict[str, t.htmltag | str] | None:
+        """
+        Get the top panel for the given instance, by default it will show the model title
+        """
+        return None
+
+    async def get_bottom_panel(
+        self, instance: Any
+    ) -> dict[str, t.htmltag | str] | None:
+        """
+        Get the bottom panel for the given instance, by default it will show nothing
+        """
+        return None
+
+    async def get_left_top_panel(
+        self, instance: Any
+    ) -> dict[str, t.htmltag | str] | None:
+        """
+        Get the left top panel for the given instance, by default it will show nothing
+        """
+        return None
+
+    async def get_right_top_panel(
+        self, instance: Any
+    ) -> dict[str, t.htmltag | str] | None:
+        """
+        Get the right top panel for the given instance, by default it will show nothing
+        """
+        return None
+
+    async def get_left_bottom_panel(
+        self, instance: Any
+    ) -> dict[str, t.htmltag | str] | None:
+        """
+        Get the left bottom panel for the given instance, by default it will show nothing
+        """
+        return None
+
+    async def get_right_bottom_panel(
+        self, instance: Any
+    ) -> dict[str, t.htmltag | str] | None:
+        """
+        Get the right bottom panel for the given instance, by default it will show nothing
+        """
+        return None
 
 
 # EOF

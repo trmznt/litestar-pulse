@@ -15,14 +15,17 @@ from sqlalchemy.orm import object_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from litestar import Response, Request, get
 from litestar.response import Redirect
+from tagato import tags as t, formfields as f
 
 from litestar_pulse.lib import roles as r
 from litestar_pulse.db.models.account import Group, User
-from .modelview import ModelForm, LPModelView, form_submit_bar
+from .modelview import LPModelView, form_submit_bar
 from ..lib import validators as v
-from ..lib import coretags as t
+
+# from ..lib import coretags as t
 from ..lib import compositetags as ct
-from ..lib import forminputs as f
+
+# from ..lib import forminputs as f
 from ..lib import formbuilder as fb
 
 
@@ -37,7 +40,7 @@ class GroupForm(fb.ModelForm):
     uuid = fb.UUIDField(label="UUID", required=False)
 
     async def set_layout(self, controller: Any = None) -> t.htmltag:
-        form_layout = t.fragment()[
+        form_layout = t.fragment(name="group-form")[
             f.fieldset(name="main")[
                 f.InlineInput()[self.name.opts(_offset=2),],
                 self.desc.opts(_offset=2, _size=5),

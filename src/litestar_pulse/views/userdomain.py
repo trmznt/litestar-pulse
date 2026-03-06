@@ -10,17 +10,14 @@ __license__ = "MPL-2.0"
 from sqlalchemy import select
 from sqlalchemy.orm import object_session, undefer
 
+from tagato import tags as t, formfields as f
+
 from litestar import Response, Request, get
 from litestar.response import Redirect
 
 from litestar_pulse.lib import roles as r
 from litestar_pulse.db.models.account import UserDomain
-
-# from litestar_pulse.lib import tags_b53 as t
-
-from litestar_pulse.lib import coretags as t
 from litestar_pulse.lib import compositetags as ct
-from litestar_pulse.lib import forminputs as f
 from litestar_pulse.lib import validators as v
 from litestar_pulse.lib import formbuilder as fb
 
@@ -50,11 +47,11 @@ class UserDomainForm(fb.ModelForm):
         form_layout = t.fragment()[
             f.fieldset(name="main")[
                 f.InlineInput()[
-                    self.domain.opts(_offset=2),
-                    self.uuid.opts(_offset=1),
+                    self.domain.opts(offset=2),
+                    self.uuid.opts(offset=1),
                 ],
-                self.desc.opts(_offset=2, _size=5),
-                self.domain_type_id.opts(_offset=2, hidden=True),
+                self.desc.opts(offset=2, size=5),
+                self.domain_type_id.opts(offset=2),
             ]
         ]
         return form_layout
