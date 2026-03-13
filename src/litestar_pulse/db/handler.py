@@ -48,6 +48,15 @@ class EnumKeyRepo(SQLAlchemyAsyncRepository[enumkey.EnumKey]):
         return result.all()
 
 
+class GroupDTO(SQLAlchemyDTO[account.Group]):
+    """Data Transfer Object for Group model"""
+
+    config = DTOConfig(
+        max_nested_depth=1,
+        exclude={"id"},
+    )
+
+
 class GroupRepo(SQLAlchemyAsyncRepository[account.Group]):
     model_type = account.Group
 
@@ -86,8 +95,29 @@ class UserDomainService(SQLAlchemyAsyncRepositoryService[account.UserDomain]):
     model_type = account.UserDomain
 
 
+class GroupService(SQLAlchemyAsyncRepositoryService[account.Group]):
+    model_type = account.Group
+
+
+class UserService(SQLAlchemyAsyncRepositoryService[account.User]):
+    model_type = account.User
+
+
+class UserDTO(SQLAlchemyDTO[account.User]):
+    """Data Transfer Object for User model"""
+
+    config = DTOConfig(
+        max_nested_depth=1,
+        exclude={"id"},
+    )
+
+
 class UserRepo(SQLAlchemyAsyncRepository[account.User]):
     model_type = account.User
+
+
+class UserGroupRepo(SQLAlchemyAsyncRepository[account.UserGroup]):
+    model_type = account.UserGroup
 
 
 class Model(types.SimpleNamespace):
@@ -105,6 +135,12 @@ class Function(types.SimpleNamespace):
     joinedload = staticmethod(joinedload)
 
 
+class DTO(types.SimpleNamespace):
+    Group = GroupDTO
+    UserDomain = UserDomainDTO
+    User = UserDTO
+
+
 class LPHandler:
     """
     This is a helper class for handling database operations
@@ -113,6 +149,7 @@ class LPHandler:
     # inherited class can override the model namespace
     model = Model()
     func = Function()
+    dto = DTO()
 
     def __init__(self, session: LPAsyncSession) -> None:
         self.session = session
@@ -124,10 +161,16 @@ class LPHandler:
         self.repo.Group = lop.Proxy(lambda: GroupRepo(session=self.session))
         self.repo.UserDomain = lop.Proxy(lambda: UserDomainRepo(session=self.session))
         self.repo.User = lop.Proxy(lambda: UserRepo(session=self.session))
+        self.repo.UserGroup = lop.Proxy(lambda: UserGroupRepo(session=self.session))
 
         # prepare all AsyncServices here, which will be specific for
         # each handler instance
         self.service = types.SimpleNamespace()
+        self.service.UserDomain = lop.Proxy(
+            lambda: UserDomainService(session=self.session)
+        )
+        self.service.Group = lop.Proxy(lambda: GroupService(session=self.session))
+        self.service.User = lop.Proxy(lambda: UserService(session=self.session))
 
     async def get(
         self, model: type[DeclarativeBase], id: int
@@ -141,6 +184,14 @@ class LPHandler:
             return self.repo.__dict__[model_type.__name__]
         except KeyError:
             raise ValueError(f"No repository found for model type {model_type}")
+
+    def get_service(
+        self, model_type: type[DeclarativeBase]
+    ) -> SQLAlchemyAsyncRepositoryService:
+        try:
+            return self.service.__dict__[model_type.__name__]
+        except KeyError:
+            raise ValueError(f"No service found for model type {model_type}")
 
 
 # set default handler class
