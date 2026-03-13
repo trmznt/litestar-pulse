@@ -23,6 +23,7 @@ from sqlalchemy import (
     Table,
     Column,
     func,
+    event,
 )
 
 from sqlalchemy.orm import (
@@ -33,9 +34,10 @@ from sqlalchemy.orm import (
     relationship,
     column_property,
     deferred,
+    attributes,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.ext.associationproxy import association_proxy
+from sqlalchemy.ext.associationproxy import association_proxy, AssociationProxy
 from sqlalchemy.ext.hybrid import hybrid_property
 
 
@@ -43,6 +45,7 @@ from advanced_alchemy.base import orm_registry
 from advanced_alchemy.types import JsonB
 
 from ...lib import roles as r
+from ...lib import crypt
 from .enumkey import EnumKey, enumkey_proxy
 from .coremixins import IdentityUUIDv7UserAuditBase, IdentityUserAuditBase, RoleMixin
 
@@ -59,11 +62,7 @@ def _create_user_group(user: "User", role: str = "M") -> "UserGroup":
 class UserDomain(IdentityUUIDv7UserAuditBase, RoleMixin):
     __tablename__ = "userdomains"
 
-    __managing_roles__ = RoleMixin.__managing_roles__ | {
-        r.USERDOMAIN_CREATE,
-        r.USERDOMAIN_MODIFY,
-        r.USERDOMAIN_DELETE,
-    }
+    __managing_roles__ = RoleMixin.__managing_roles__ | {r.USERDOMAIN_MANAGE}
     __viewing_roles__ = RoleMixin.__viewing_roles__ | {r.USERDOMAIN_VIEW}
     __modifying_roles__ = RoleMixin.__modifying_roles__ | {r.USERDOMAIN_MODIFY}
 
@@ -113,11 +112,7 @@ class UserData(IdentityUserAuditBase, RoleMixin):
 
     __tablename__ = "userdatas"
 
-    __managing_roles__ = RoleMixin.__managing_roles__ | {
-        r.USER_CREATE,
-        r.USER_MODIFY,
-        r.USER_DELETE,
-    }
+    __managing_roles__ = RoleMixin.__managing_roles__ | {r.USER_MANAGE}
     __viewing_roles__ = RoleMixin.__viewing_roles__ | {r.USER_VIEW}
     __modifying_roles__ = RoleMixin.__modifying_roles__ | {r.USER_MODIFY}
 
@@ -146,15 +141,9 @@ class UserGroup(IdentityUserAuditBase, RoleMixin):
     __tablename__ = "users_groups"
     __table_args__ = (UniqueConstraint("user_id", "group_id"),)
 
-    __managing_roles__ = RoleMixin.__managing_roles__ | {
-        r.GROUP_ADDUSER,
-        r.GROUP_DELUSER,
-    }
-    __viewing_roles__ = RoleMixin.__viewing_roles__ | {r.GROUP_VIEW}
-    __modifying_roles__ = RoleMixin.__modifying_roles__ | {
-        r.GROUP_ADDUSER,
-        r.GROUP_DELUSER,
-    }
+    __managing_roles__ = RoleMixin.__managing_roles__ | {r.USERGROUP_MANAGE}
+    __viewing_roles__ = RoleMixin.__viewing_roles__ | {r.USERGROUP_VIEW}
+    __modifying_roles__ = RoleMixin.__modifying_roles__ | {r.USERGROUP_MODIFY}
 
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -169,24 +158,22 @@ class UserGroup(IdentityUserAuditBase, RoleMixin):
 
     user: Mapped[User] = relationship(
         "User",
-        back_populates="groups",
+        back_populates="usergroups",
         foreign_keys=[user_id],
+        lazy="joined",
     )
     group: Mapped[Group] = relationship(
         "Group",
         back_populates="usergroups",
         foreign_keys=[group_id],
+        lazy="joined",
     )
 
 
 class User(IdentityUUIDv7UserAuditBase, RoleMixin):
     __tablename__ = "users"
 
-    __managing_roles__ = RoleMixin.__managing_roles__ | {
-        r.USER_CREATE,
-        r.USER_MODIFY,
-        r.USER_DELETE,
-    }
+    __managing_roles__ = RoleMixin.__managing_roles__ | {r.USER_MANAGE}
     __viewing_roles__ = RoleMixin.__viewing_roles__ | {r.USER_VIEW}
     __modifying_roles__ = RoleMixin.__modifying_roles__ | {r.USER_MODIFY}
 
@@ -244,6 +231,8 @@ class User(IdentityUUIDv7UserAuditBase, RoleMixin):
         lazy="joined",
     )
 
+    # other relationships and association proxies
+
     userdata: Mapped[dict[int, UserData]] = relationship(
         "UserData",
         collection_class=column_mapped_collection(UserData.key_id),
@@ -252,13 +241,18 @@ class User(IdentityUUIDv7UserAuditBase, RoleMixin):
         back_populates="user",
     )
 
-    groups: Mapped[list[UserGroup]] = relationship(
+    usergroups: Mapped[list[UserGroup]] = relationship(
         UserGroup,
         back_populates="user",
         cascade="all, delete-orphan",
+        passive_deletes=True,
         foreign_keys=[UserGroup.user_id],
         # lazy="joined", cannot do joined loading here because of the association proxy,
         # will cause circular loading
+    )
+
+    groups: AssociationProxy[list[Group]] = association_proxy(
+        "usergroups", "group", creator=lambda g: UserGroup(group=g, role="M")
     )
 
     def __repr__(self) -> str:
@@ -274,15 +268,32 @@ class User(IdentityUUIDv7UserAuditBase, RoleMixin):
         return result.scalars().first()
 
     async def user_instance(self) -> UserInstance:
+        group_idents = [(g.id, g.name) for g in await self.get_groups()]
+        role_ids = await self.get_roles()
         return UserInstance(
             id=self.id,
             uuid=self.uuid,
             login=self.login,
             domain=(await self.awaitable_attrs.domain).domain,
             name=self.name,
-            roles=[],
-            groups=[],
+            roles=set(role_ids),
+            group_idents=set(group_idents),
+            group_ids=set(gid for gid, _ in group_idents),
         )
+
+    async def set_password(self, password: str) -> None:
+        self.credential = await crypt.hash_password(password)
+
+    async def get_groups(self) -> list[Group]:
+        return set([ug.group for ug in await self.awaitable_attrs.usergroups])
+
+    async def get_roles(self, groups: list[Group] | None = None) -> set[str]:
+        gorups = groups or await self.get_groups()
+        roles = set()
+        for group in gorups:
+            for role in await group.awaitable_attrs.roles:
+                roles.add(role.key)
+        return roles
 
 
 groups_roles = Table(
@@ -297,19 +308,9 @@ class Group(IdentityUUIDv7UserAuditBase, RoleMixin):
 
     __tablename__ = "groups"
 
-    __managing_roles__ = RoleMixin.__managing_roles__ | {
-        r.GROUP_CREATE,
-        r.GROUP_MODIFY,
-        r.GROUP_DELETE,
-        r.GROUP_ADDUSER,
-        r.GROUP_DELUSER,
-    }
+    __managing_roles__ = RoleMixin.__managing_roles__ | {r.GROUP_MANAGE}
     __viewing_roles__ = RoleMixin.__viewing_roles__ | {r.GROUP_VIEW}
-    __modifying_roles__ = RoleMixin.__modifying_roles__ | {
-        r.GROUP_MODIFY,
-        r.GROUP_ADDUSER,
-        r.GROUP_DELUSER,
-    }
+    __modifying_roles__ = RoleMixin.__modifying_roles__ | {r.GROUP_MODIFY}
 
     name: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
     desc: Mapped[str] = mapped_column(String(128), nullable=False, server_default="")
@@ -324,6 +325,8 @@ class Group(IdentityUUIDv7UserAuditBase, RoleMixin):
         server_default="0",
         default=0,
     )
+
+    # other relationships ans assocation proxies
 
     roles: Mapped[list[EnumKey]] = relationship(
         EnumKey,
@@ -343,6 +346,7 @@ class Group(IdentityUUIDv7UserAuditBase, RoleMixin):
         UserGroup,
         back_populates="group",
         cascade="all, delete-orphan",
+        passive_deletes=True,
         foreign_keys=[UserGroup.group_id],
     )
 
@@ -360,7 +364,9 @@ class Group(IdentityUUIDv7UserAuditBase, RoleMixin):
         cascade="all, delete-orphan",
     )
 
-    users = association_proxy("usergroups", "user", creator=_create_user_group)
+    users: AssociationProxy[list[User]] = association_proxy(
+        "usergroups", "user", creator=_create_user_group
+    )
 
     def __repr__(self) -> str:
         return f"<Group id={self.id} name={self.name}>"
@@ -406,17 +412,31 @@ class UserInstance(msgspec.Struct):
     login: str
     domain: str
     name: str
-    roles: list[str]
-    groups: list[str]
+    roles: set[str]
+    group_idents: set[tuple[int, str]]
+    group_ids: set[int]
 
     def is_sysadm(self) -> bool:
-        raise NotImplementedError()
+        return r.SYSADM in self.roles
 
-    def in_group(self, groups: list[str]) -> bool:
-        raise NotImplementedError()
+    def in_groups(self, groups: list[str]) -> bool:
+        group_names = [grp_name for (_, grp_name) in self.group_idents]
+        for grp in groups:
+            if grp in group_names:
+                return True
+        return False
+
+    def in_group_ids(self, group_ids: list[int]) -> bool:
+        for grp_id in group_ids:
+            if grp_id in self.group_ids:
+                return True
+        return False
 
     def has_roles(self, roles: list[str]) -> bool:
-        raise NotImplementedError()
+        for role in roles:
+            if role in self.roles:
+                return True
+        return False
 
     def groups(self) -> list[str]:
         raise NotImplementedError()
@@ -433,5 +453,6 @@ UserDomain.user_count: Mapped[int] = deferred(
         .scalar_subquery()
     )
 )
+
 
 # EOF
