@@ -199,6 +199,7 @@ class DBConfig:
             ) -> Any:  # pragma: no cover
                 """Override the default begin statement.  The disables the built in begin execution."""
                 dbapi_connection.isolation_level = None
+                dbapi_connection.execute("PRAGMA foreign_keys = ON")
 
             @event.listens_for(engine.sync_engine, "begin")
             def _sqla_on_begin(dbapi_connection: Any) -> Any:  # pragma: no cover
