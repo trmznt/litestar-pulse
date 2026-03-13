@@ -8,9 +8,12 @@ __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
 
 
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Self
 from datetime import date, datetime
 from uuid import UUID, uuid4
+from functools import cached_property
+
 
 from uuid_utils.compat import uuid7
 from sqlalchemy import String, ForeignKey, select
@@ -35,10 +38,17 @@ if TYPE_CHECKING:
     from .account import User
 
 
-def get_current_userid() -> int:
-    # Placeholder function to get the current user ID
-    # In a real application, this would fetch the ID from the session or context
-    return 1  # Example static user ID for demonstration
+_current_userid: ContextVar[int | None] = ContextVar("_current_userid", default=None)
+
+
+def set_current_userid(user_id: int | None) -> None:
+    """Set the current user ID for audit columns."""
+    _current_userid.set(user_id)
+
+
+def get_current_userid() -> int | None:
+    """Return the current user ID, or None if not set (e.g. during seeding)."""
+    return _current_userid.get()
 
 
 @declarative_mixin
@@ -90,6 +100,10 @@ class UpdatedByColumn:
             lazy="joined",
         )
 
+    @cached_property
+    def updated_by_login(self) -> str:
+        return self.updated_by.login if self.updated_by else "-"
+
 
 @declarative_mixin
 class HelperMethodMixin:
@@ -133,6 +147,7 @@ class RoleMixin:
     __viewing_roles__ = {r.SYSADM, r.SYSVIEW}
     __managing_roles__ = {r.SYSADM}
     __modifying_roles__ = {r.SYSADM}
+    __deleting_roles__ = {r.SYSADM}
 
     # __managing_roles and __modifying_roles also infer __viewing_roles
 
@@ -143,6 +158,22 @@ class RoleMixin:
     @is_admin.expression
     def is_admin(cls):
         return cls.role == "admin"
+
+    @classmethod
+    def can_manage(cls, roles: set[str]) -> bool:
+        return bool(cls.__managing_roles__ & roles)
+
+    @classmethod
+    def can_modify(cls, roles: set[str]) -> bool:
+        return bool(cls.__modifying_roles__ & roles)
+
+    @classmethod
+    def can_view(cls, roles: set[str]) -> bool:
+        return bool(cls.__viewing_roles__ & roles)
+
+    @classmethod
+    def can_delete(cls, roles: set[str]) -> bool:
+        return cls.can_manage(cls, roles) or bool(cls.__deleting_roles__ & roles)
 
 
 @declarative_mixin
@@ -157,5 +188,5 @@ class IdentityUserAuditBase(IdentityAuditBase, UpdatedByColumn, HelperMethodMixi
     __abstract__ = True
 
 
-# note: need to hat IdentitytNanoidUserAuditBase as well
+# note: need to create IdentityNanoidUserAuditBase as well
 # EOF
