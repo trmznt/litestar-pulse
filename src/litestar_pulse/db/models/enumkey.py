@@ -31,7 +31,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from advanced_alchemy.base import IdentityBase
 
 from litestar_pulse.config.app import logger
-from litestar_pulse.db.models.coremixins import IdentityUserAuditBase
+from litestar_pulse.db.models.coremixins import IdentityUserAuditBase, RoleMixin
+from litestar_pulse.lib import roles as r
 
 if TYPE_CHECKING:  # pragma: no cover - typing helper
     from typing import TextIO
@@ -59,8 +60,12 @@ def _determine_is_category(payload: dict[str, Any], category: "EnumKey | None") 
     return category is None
 
 
-class EnumKey(IdentityUserAuditBase):
+class EnumKey(IdentityUserAuditBase, RoleMixin):
     """Enumerated key/value pairs grouped under categories."""
+
+    __managing_roles__ = RoleMixin.__managing_roles__ | {r.ENUMKEY_MANAGE}
+    __viewing_roles__ = RoleMixin.__viewing_roles__ | {r.ENUMKEY_VIEW}
+    __modifying_roles__ = RoleMixin.__modifying_roles__ | {r.ENUMKEY_MODIFY}
 
     __tablename__ = "enumkeys"
     __table_args__ = (
