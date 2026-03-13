@@ -250,7 +250,7 @@ async def _ensure_domains(
                     )
                     continue
                 role = (membership.get("role") or "M").upper()[0:1] or "M"
-                user.groups.append(UserGroup(user=user, group=group, role=role))
+                user.usergroups.append(UserGroup(user=user, group=group, role=role))
                 seen_memberships.add(group_name)
 
     return created, domains, created_users
