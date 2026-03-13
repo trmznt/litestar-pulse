@@ -1,3 +1,9 @@
+# Roles are mainly categorized to
+# - VIEW can view the model
+# - MODIFY can view and modify the model
+# - MANAGE can view, modify, create, and delete the model
+
+
 SYSADM = "~r|system-adm"
 SYSVIEW = "~r|system-viewer"
 DATAADM = "~r|data-adm"
@@ -6,27 +12,25 @@ PUBLIC = "~r|public"
 USER = "~r|user"
 GUEST = "~r|guest"
 
-ENUMKEY_CREATE = "~r|enumkey|create"
+ENUMKEY_MANAGE = "~r|enumkey|manage"
 ENUMKEY_MODIFY = "~r|enumkey|modify"
 ENUMKEY_VIEW = "~r|enumkey|view"
-ENUMKEY_DELETE = "~r|enumkey|delete"
 
-USERDOMAIN_CREATE = "~r|userdomain|create"
+USERDOMAIN_MANAGE = "~r|userdomain|manage"
 USERDOMAIN_MODIFY = "~r|userdomain|modify"
 USERDOMAIN_VIEW = "~r|userdomain|view"
-USERDOMAIN_DELETE = "~r|userdomain|delete"
 
-USER_CREATE = "~r|user|create"
+USER_MANAGE = "~r|user|manage"
 USER_MODIFY = "~r|user|modify"
 USER_VIEW = "~r|user|view"
-USER_DELETE = "~r|user|delete"
 
-GROUP_CREATE = "~r|group|create"
+GROUP_MANAGE = "~r|group|manage"
 GROUP_MODIFY = "~r|group|modify"
 GROUP_VIEW = "~r|group|view"
-GROUP_DELETE = "~r|group|delete"
-GROUP_ADDUSER = "~r|group|add-user"
-GROUP_DELUSER = "~r|group|del-user"
+
+USERGROUP_MANAGE = "~r|usergroup|manage"
+USERGROUP_MODIFY = "~r|usergroup|modify"
+USERGROUP_VIEW = "~r|usergroup|view"
 
 
 def is_sysadm(user):
