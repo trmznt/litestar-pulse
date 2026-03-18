@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 import sys
-from typing import NoReturn
+import textwrap
+from typing import Any, NoReturn
 
 import nest_asyncio
 
@@ -135,6 +136,38 @@ def pulse_user_add(app: Litestar) -> None:
     click.echo(f"Running pulsemgr user-add app: {app.debug}")
 
 
+@pulsemgr.command(name="user-passwd", help="change user password")
+@click.option(
+    "--username",
+    "username",
+    required=True,
+    help="The username of the user whose password to change.",
+)
+@click.option(
+    "--password",
+    "password",
+    prompt=True,
+    hide_input=True,
+    confirmation_prompt=True,
+    help="The new password for the user.",
+)
+async def pulse_user_passwd(app: Litestar, username: str, password: str) -> None:
+    """Change user password."""
+
+    click.echo("Changing user password...")
+    click.echo(f"Running pulsemgr user-passwd app: {app.debug}")
+
+    async with get_dbhandler() as dbh:
+        user = await dbh.repo.User.get_one_or_none(login=username)
+        if not user:
+            click.echo(f"User '{username}' not found.")
+            return
+
+        await user.set_password(password)
+        await dbh.session.commit()
+        click.echo(f"Password for user '{username}' has been updated.")
+
+
 @pulsemgr.command(name="enumkey-list", help="list enum keys")
 async def pulse_enumkey_list() -> None:
     """List all enum keys."""
@@ -178,6 +211,34 @@ def run_cli() -> NoReturn:
     import IPython
 
     IPython.embed(using="asyncio")
+
+
+@pulsemgr.command(name="run-script", help="run a Python script within a transaction")
+@click.argument("script_path", type=click.Path(exists=True))
+async def runscript_cli(script_path: str) -> NoReturn:
+    """
+    CLI entry point for litestar pulsemgr to run a Python script within the app context
+    """
+
+    from litestar_pulse.config.db import DBConfig
+    from litestar_pulse.db import handler_factory
+
+    dbc = DBConfig()
+
+    try:
+        async with dbc.session_factory() as session:
+            dbhandler = handler_factory(session)
+            print(f"Running script '{script_path}' with database handler (dbh)...")
+            with open(script_path, "r") as f:
+                script_code = f.read()
+            # Wrap the script in an async function so it can use await
+            wrapped = "async def __script__():\n"
+            wrapped += textwrap.indent(script_code, "    ") + "\n"
+            globs: dict[str, Any] = {"dbh": dbhandler}
+            exec(compile(wrapped, script_path, "exec"), globs)
+            await globs["__script__"]()
+    finally:
+        await dbc.engine.dispose()
 
 
 @pulsemgr.command(name="txn", help="run IPython shell within a transaction")
