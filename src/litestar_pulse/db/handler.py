@@ -10,10 +10,10 @@ __license__ = "MPL-2.0"
 
 import types
 import yaml
-from typing import Awaitable
+from typing import Awaitable, TypeVar
 
-from sqlalchemy import select
-from sqlalchemy.orm import DeclarativeBase, undefer, joinedload
+from sqlalchemy import inspect, select
+from sqlalchemy.orm import DeclarativeBase, undefer, joinedload, object_session
 
 from advanced_alchemy.repository import SQLAlchemyAsyncRepository
 from advanced_alchemy.service import SQLAlchemyAsyncRepositoryService
@@ -91,16 +91,76 @@ class UserDomainRepo(SQLAlchemyAsyncRepository[account.UserDomain]):
         return result.all()
 
 
-class UserDomainService(SQLAlchemyAsyncRepositoryService[account.UserDomain]):
-    model_type = account.UserDomain
-
-
-class GroupService(SQLAlchemyAsyncRepositoryService[account.Group]):
-    model_type = account.Group
-
-
-class UserService(SQLAlchemyAsyncRepositoryService[account.User]):
+class UserRepo(SQLAlchemyAsyncRepository[account.User]):
     model_type = account.User
+
+
+class UserGroupRepo(SQLAlchemyAsyncRepository[account.UserGroup]):
+    model_type = account.UserGroup
+
+
+# services
+
+T = TypeVar("T")
+
+
+class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
+    # this is a base service class that can be inherited by other services
+    # it can be used to define common methods for all services
+
+    async def before_update_from_dict(self, instance: T, data: dict) -> None:
+        # this method can be overridden by inherited services to perform actions before updating from dict
+        pass
+
+    async def update_from_dict(self, instance: T, data: dict) -> T:
+
+        if not object_session(instance):
+            raise ValueError("Instance must be attached to a session before updating")
+
+        # preprocess data before updating instance attributes
+        await self.before_update_from_dict(instance, data)
+
+        # update instance attributes from data dict
+        for key, value in data.items():
+            setattr(instance, key, value)
+
+        state = inspect(instance)
+        if state.pending or state.transient:
+            # New objects are inserted by flush; repository.update() expects an existing row.
+            await self.repository.session.flush()
+        else:
+            await self.repository.update(instance)
+
+        return instance
+
+
+class UserDomainService(LPBaseService[account.UserDomain]):
+    model_type = account.UserDomain
+    repository_type = UserDomainRepo
+
+
+class GroupService(LPBaseService[account.Group]):
+    model_type = account.Group
+    repository_type = GroupRepo
+
+
+class UserService(LPBaseService[account.User]):
+    model_type = account.User
+    repository_type = UserRepo
+
+    async def before_update_from_dict(self, instance: account.User, data: dict) -> None:
+        """Ensure the primary group is included in the user's groups before updating."""
+        if "primarygroup_id" in data:
+            primarygroup_id = data["primarygroup_id"]
+            if primarygroup_id is not None:
+
+                # Check if the user is already in this group
+                usergroups = await instance.awaitable_attrs.usergroups
+                if not any(ug.group_id == primarygroup_id for ug in usergroups):
+                    # If not, add it to the user's groups
+                    instance.usergroups.append(
+                        account.UserGroup(group_id=primarygroup_id, role="M")
+                    )
 
 
 class UserDTO(SQLAlchemyDTO[account.User]):
@@ -110,14 +170,6 @@ class UserDTO(SQLAlchemyDTO[account.User]):
         max_nested_depth=1,
         exclude={"id"},
     )
-
-
-class UserRepo(SQLAlchemyAsyncRepository[account.User]):
-    model_type = account.User
-
-
-class UserGroupRepo(SQLAlchemyAsyncRepository[account.UserGroup]):
-    model_type = account.UserGroup
 
 
 class Model(types.SimpleNamespace):
@@ -167,10 +219,20 @@ class LPHandler:
         # each handler instance
         self.service = types.SimpleNamespace()
         self.service.UserDomain = lop.Proxy(
-            lambda: UserDomainService(session=self.session)
+            lambda: UserDomainService(
+                session=self.session, repository=self.repo.UserDomain.__wrapped__
+            )
         )
-        self.service.Group = lop.Proxy(lambda: GroupService(session=self.session))
-        self.service.User = lop.Proxy(lambda: UserService(session=self.session))
+        self.service.Group = lop.Proxy(
+            lambda: GroupService(
+                session=self.session, repository=self.repo.Group.__wrapped__
+            )
+        )
+        self.service.User = lop.Proxy(
+            lambda: UserService(
+                session=self.session, repository=self.repo.User.__wrapped__
+            )
+        )
 
     async def get(
         self, model: type[DeclarativeBase], id: int
