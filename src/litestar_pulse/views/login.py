@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING
 class LoginView(Controller):
     path = ""
 
-    @get("/login")
+    @get("/login", name="login")
     async def login(self, request: Request) -> Template:
         """
         Render the login page
@@ -61,7 +61,7 @@ class LoginView(Controller):
             ),
         )
 
-    @post("/login")
+    @post("/login", name="do_login")
     async def do_login(self, request: Request, transaction: AsyncSession) -> Template:
         """
         Handle login form submission
@@ -79,21 +79,15 @@ class LoginView(Controller):
         flash(request, "Login successful!", category="success")
         return Redirect(path=came_from, status_code=303)
 
-    @get("/logout")
+    @get("/logout", name="logout")
     async def logout(self, request: Request) -> Template:
         """
         Handle user logout
         """
         request.session.clear()
 
-        body = t.div[
-            t.h1["Logout Successful"],
-            t.p["You have been logged out."],
-        ]
-
-        return Template(
-            template_name="lp/base.mako", context={"title": "Logout", "html": body}
-        )
+        flash(request, "You have been logged out.", category="success")
+        return Redirect(path="/", status_code=303)
 
     @get("/login-remote")
     async def login_remote(self) -> Response[str]:
