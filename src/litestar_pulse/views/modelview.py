@@ -11,6 +11,8 @@ from typing import Any
 from uuid import UUID
 from enum import Enum
 
+import re
+
 from sqlalchemy.orm import object_session, joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +21,7 @@ from tagato import tags as t, formfields as f
 
 from litestar import Response, Request, get
 from litestar.response import Redirect
+from litestar.plugins.flash import flash
 
 from ..lib.template import Template
 from ..lib.validators import Validator
@@ -106,6 +109,15 @@ class LPModelView(LPBaseView):
             "load": [joinedload(self.model_type.updated_by)],
         }
 
+    async def additional_action(self, data: dict[str, Any]) -> Any:
+        """
+        Handle additional actions that are not covered by the default implementations.
+        This method can be overridden in derived classes to handle custom actions.
+        """
+        raise NotImplementedError(
+            "_method argument is not recognized: %s" % data.get("_method", "None")
+        )
+
     # main methods
 
     def get_repository(self) -> Any:
@@ -184,6 +196,7 @@ class LPModelView(LPBaseView):
             right_top_panel=await self.get_right_top_panel(instance),
             left_bottom_panel=await self.get_left_bottom_panel(instance),
             right_bottom_panel=await self.get_right_bottom_panel(instance),
+            bottom_panel=await self.get_bottom_panel(instance),
         )
 
         return ctx
@@ -258,8 +271,8 @@ class LPModelView(LPBaseView):
                 try:
                     # validate and update to database
                     self.dbt.add(instance)
-                    await form.validate_and_update(
-                        data, self.dbt, check_timestamp=False
+                    await form.transform_and_update(
+                        data, self.dbh, check_timestamp=False
                     )
 
                 except fb.ParseFormError as e:
@@ -299,7 +312,7 @@ class LPModelView(LPBaseView):
         async with self.dbt.begin_nested() as nested:
             try:
                 # validate and update to database
-                await form.validate_and_update(data, self.dbt)
+                await form.transform_and_update(data, self.dbh, check_timestamp=True)
 
             except ParseFormError as e:
                 await nested.rollback()
@@ -345,7 +358,7 @@ class LPModelView(LPBaseView):
         """
         Handle the delete confirmation,
         """
-        dbids = data.getall(f"{self.model_type.__name__.lower()}-ids")
+        dbids = data.getall(f"{self.model_type.__name__.lower()}-ids", [])
 
         match data.get("_method", None):
 
@@ -364,14 +377,19 @@ class LPModelView(LPBaseView):
                 )
 
             case "delete-confirmed":
-                raise NotImplementedError(
-                    "delete action has not been implemented in the derived class, dbids to be deleted: %s"
-                    % dbids
+
+                await self.dbh.get_repository(self.model_type).delete_many(dbids)
+                flash(
+                    self.req,
+                    "%d %s(s) deleted successfully!"
+                    % (len(dbids), self.get_model_title()),
+                    category="success",
+                )
+                return Redirect(
+                    path=self.req.url_for(self.get_controller_handler_name() + "-index")
                 )
 
-        raise NotImplementedError(
-            "_method argument is not recognized: %s" % data.get("_method", "None")
-        )
+        return await self.additional_action(data)
 
     # layoutting
 
@@ -433,6 +451,7 @@ class LPModelView(LPBaseView):
             fragments.add(t.div(class_="row", name="main_panel")[main_panel["html"]])
         if left_bottom_panel or right_bottom_panel:
             fragments.add(
+                t.br,
                 t.div(class_="row", name="left_right_bottom_panel")[
                     t.div(class_="col-md-6", name="left_bottom_panel")[
                         left_bottom_panel["html"] if left_bottom_panel else ""
@@ -440,11 +459,12 @@ class LPModelView(LPBaseView):
                     t.div(class_="col-md-6", name="right_bottom_panel")[
                         right_bottom_panel["html"] if right_bottom_panel else ""
                     ],
-                ]
+                ],
             )
         if bottom_panel:
             fragments.add(
-                t.div(class_="row", name="bottom_panel")[bottom_panel["html"]]
+                t.hr,
+                t.div(class_="row", name="bottom_panel")[bottom_panel["html"]],
             )
 
         # collate the additional jscode, pyscode and scriptlinks from the panels
@@ -467,7 +487,10 @@ class LPModelView(LPBaseView):
                 scriptlinks.extend(panel["scriptlinks"])
 
         return dict(
-            html=fragments, jscode=jscode, pyscode=pyscode, scriptlinks=scriptlinks
+            html=fragments,
+            javascript_code="\n".join(jscode),
+            pyscript_code="\n".join(pyscode),
+            scriptlink_lines="\n".join(scriptlinks),
         )
 
     async def get_main_panel(self, instance: Any) -> dict[str, t.htmltag | str] | None:
@@ -529,6 +552,52 @@ class LPModelView(LPBaseView):
         Get the right bottom panel for the given instance, by default it will show nothing
         """
         return None
+
+
+# ---
+# utilities
+# ---
+
+
+def parse_indexed_form_xxx(form_data: Any, group_name: str) -> list[dict]:
+    """
+    Parses MultiDict keys like 'items[0][id]' into a list of dictionaries.
+    """
+    structured_data = {}
+    # Pattern to match: items[0][id]
+    pattern = re.compile(rf"{group_name}\[(\w+)\]\[(\w+)\]")
+
+    for key, value in form_data.items():
+        match = pattern.match(key)
+        if match:
+            index, field = match.groups()
+
+            if index not in structured_data:
+                structured_data[index] = {}
+
+            structured_data[index][field] = value
+
+    # Return as a list of dictionaries
+    return list(structured_data.values())
+
+
+# Compiled once when the module loads
+INDEXED_PATTERN = re.compile(r"(\w+)\[(\w+)\]\[(\w+)\]")
+
+
+def parse_indexed_form(form_data: Any) -> dict[str, list[dict]]:
+    """Optimised version for multiple groups in one pass."""
+    results = {}
+    for key, value in form_data.items():
+        match = INDEXED_PATTERN.match(key)
+        if match:
+            group, index, field = match.groups()
+            group_list = results.setdefault(group, {})
+            row = group_list.setdefault(index, {})
+            row[field] = value
+
+    # Convert inner dicts to lists
+    return {g: list(rows.values()) for g, rows in results.items()}
 
 
 # EOF
