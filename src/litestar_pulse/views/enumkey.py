@@ -58,11 +58,8 @@ class EnumKeyView(LPModelView):
     title = "Enum Key Management"
     icon = "fa fa-list"
 
-    managing_roles = LPModelView.managing_roles | {
-        r.ENUMKEY_MODIFY,
-        r.ENUMKEY_CREATE,
-        r.ENUMKEY_DELETE,
-    }
+    managing_roles = LPModelView.managing_roles | {r.ENUMKEY_MANAGE}
+    modifying_roles = LPModelView.modifying_roles | {r.ENUMKEY_MODIFY}
     viewing_roles = LPModelView.viewing_roles | {r.ENUMKEY_VIEW}
 
     def augment_repo_options(self, for_listing: bool = False) -> dict[str, Any]:

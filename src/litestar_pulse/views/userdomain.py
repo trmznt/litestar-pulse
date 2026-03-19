@@ -80,11 +80,8 @@ class UserDomainView(LPModelView):
     model_type = UserDomain
     model_form = UserDomainForm
 
-    managing_roles = LPModelView.managing_roles | {
-        r.USERDOMAIN_MODIFY,
-        r.USERDOMAIN_CREATE,
-        r.USERDOMAIN_DELETE,
-    }
+    managing_roles = LPModelView.managing_roles | {r.USERDOMAIN_MANAGE}
+    modiying_roles = LPModelView.modifying_roles | {r.USERDOMAIN_MODIFY}
     viewing_roles = LPModelView.viewing_roles | {r.USERDOMAIN_VIEW}
 
     def generate_instance_table(
