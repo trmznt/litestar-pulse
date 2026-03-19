@@ -75,7 +75,7 @@ class custom_submit_bar(t.singletag):
             assert type(b) == tuple or type(b) == list
             buttons.add(
                 t.button(
-                    class_="btn btn-primary",
+                    class_="btn bg-primary-subtle text-primary-emphasis",
                     type="submit",
                     name="_method",
                     id="_method.%s" % b[1],
@@ -94,24 +94,32 @@ class selection_bar(object):
 
     def __init__(
         self,
-        prefix,
-        action,
-        add=None,
-        others="",
-        hiddens=None,
+        prefix: str,
+        action: str,
+        add: tuple[str, str] | None = None,
+        others: t.htmltag | str = "",
+        hidden_inputs: dict[str, str | int] | None = None,
         name="",
         delete_label="Delete",
         delete_value="delete-confirmation",
+        additional_button_func=None,
     ):
+        """
+        additional_button_func: a function that takes the selection_bar instance and returns
+        a tag (eg. tag.fragment) to be added to the button bar. This can be used to add custom
+        buttons with custom behavior.
+        """
+
         super().__init__()
         self.prefix = prefix
         self.action = action
         self.add = add
         self.others = others
-        self.hiddens = list(hiddens or [])
+        self.hidden_inputs = hidden_inputs if hidden_inputs else {}
         self.name = name or "selection_bar"
         self.delete_label = delete_label
         self.delete_value = delete_value
+        self.additional_button_func = additional_button_func
 
     def render(self, html, jscode=""):
 
@@ -147,6 +155,9 @@ class selection_bar(object):
             ],
         ]
 
+        if additional_button_func := self.additional_button_func:
+            button_bar.add(t.div(class_="btn-group me-2")[additional_button_func(self)])
+
         if self.add:
             button_bar.add(
                 t.div(class_="btn-group me-2")[
@@ -161,11 +172,11 @@ class selection_bar(object):
         if self.others:
             button_bar.add(t.div(class_="btn-group")[self.others])
 
-        hiddens_container = None
-        if self.hiddens:
-            hiddens_container = t.div(class_="d-none")
-            for k, v in self.hiddens:
-                hiddens_container.add(t.input(type="hidden", name=k, value=v))
+        hidden_container = None
+        if any(self.hidden_inputs):
+            hidden_container = t.div(class_="d-none")
+            for k, v in self.hidden_inputs.items():
+                hidden_container.add(t.input(type="hidden", name=k, value=v))
 
         form_id = f"{self.prefix}-form"
         sform = t.form(name=self.name, id=form_id, method="post", action=self.action)
@@ -180,8 +191,8 @@ class selection_bar(object):
             button_bar,
             html,
         ]
-        if hiddens_container:
-            elements.append(hiddens_container)
+        if hidden_container:
+            elements.append(hidden_container)
 
         sform.add(*elements)
 
@@ -212,7 +223,7 @@ SELECTION_BAR_JS_TEMPLATE = """\
         bind('select-none', () => allBoxes().forEach(cb => (cb.checked = false)));
         bind('select-inverse', () => allBoxes().forEach(cb => (cb.checked = !cb.checked)));
 
-        bind('submit-delete', async event => {{
+        const handleSubmitAction = async event => {{
             event.preventDefault();
             const button = event.currentTarget;
             try {{
@@ -255,7 +266,11 @@ SELECTION_BAR_JS_TEMPLATE = """\
             }} catch (error) {{
                 console.error('Selection bar request failed', error);
             }}
-        }});
+        }};
+
+        form
+            .querySelectorAll(`[id^="${{prefix}}-submit-"]`)
+            .forEach(node => node.addEventListener('click', handleSubmitAction));
     }};
 
     if (document.readyState === 'loading') {{
