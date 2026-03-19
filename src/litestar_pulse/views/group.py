@@ -42,8 +42,8 @@ class GroupForm(fb.ModelForm):
     async def set_layout(self, controller: Any = None) -> t.htmltag:
         form_layout = t.fragment(name="group-form")[
             f.fieldset(name="main")[
-                f.InlineInput()[self.name.opts(_offset=2),],
-                self.desc.opts(_offset=2, _size=5),
+                f.InlineInput()[self.name.opts(offset=2),],
+                self.desc.opts(offset=2, size=5),
             ]
         ]
         return form_layout
@@ -73,11 +73,8 @@ class GroupView(LPModelView):
     title = "Group Management"
     icon = "fa fa-users"
 
-    managing_roles = LPModelView.managing_roles | {
-        r.GROUP_MODIFY,
-        r.GROUP_CREATE,
-        r.GROUP_DELETE,
-    }
+    managing_roles = LPModelView.managing_roles | {r.GROUP_MANAGE}
+    modiying_roles = LPModelView.modifying_roles | {r.GROUP_MODIFY}
     viewing_roles = LPModelView.viewing_roles | {r.GROUP_VIEW}
 
     def augment_repo_options(self, for_listing: bool = False) -> dict[str, Any]:
@@ -93,6 +90,22 @@ class GroupView(LPModelView):
         groups: list[Group],
     ) -> tuple[t.htmltag, str]:
         return generate_group_table(groups, self.req)
+
+    async def get_bottom_panel(self, instance: Any) -> t.htmltag:
+
+        usergroups = await instance.awaitable_attrs.usergroups
+        if not any(usergroups):
+            return None
+
+        for ug in usergroups:
+            print(f"UserGroup: {ug.user_id=}, {ug.group_id=}, {ug.role=}")
+
+        html, code = generate_usergroup_table(usergroups, self.req)
+
+        return dict(
+            html=t.div(id="user-groups-panel")[t.h3["User Groups"], t.div()[html]],
+            jscode=code,
+        )
 
 
 def generate_group_table(
@@ -125,7 +138,7 @@ def generate_group_table(
             t.td()[escape(group.desc or "")],
             t.td()[ct.datetime(group.created_at)],
             t.td()[ct.datetime(group.updated_at)],
-            t.td()[escape(group.updated_by.login)],
+            t.td()[escape(group.updated_by_login)],
         ]
         table_body += row
 
@@ -155,6 +168,59 @@ def generate_group_table(
 
     else:
         html = t.div()[group_table]
+        code = ""
+
+    code += template_datatable_js
+    return html, code
+
+
+def generate_usergroup_table(
+    usergroups: list[Group], request: Request
+) -> tuple[t.htmltag, str]:
+    """
+    Generate an HTML table for the given list of UserGroup objects
+    """
+
+    table_body = t.tbody()
+
+    not_guest = True  # not request.user.has_roles(r.GUEST)
+
+    for usergroup in usergroups:
+        table_body.add(
+            t.tr()[
+                t.td()[
+                    (
+                        t.literal(
+                            '<input type="checkbox" name="usergroup-ids" value="%d" />'
+                            % usergroup.id
+                        )
+                        if not_guest
+                        else ""
+                    )
+                ],
+                t.td()[usergroup.user.login],
+                t.td()[usergroup.role],
+            ]
+        )
+
+    usergroup_table = t.table(
+        id="usergroup-table", class_="table table-condensed table-striped"
+    )[t.thead()[t.tr()[t.th(style="width: 2em"), t.th()["Login"], t.th()["Role"]]]]
+
+    usergroup_table.add(table_body)
+
+    if not_guest:
+        add_button = ("New user-group", request.url_for("user-action", dbid=0))
+
+        bar = ct.selection_bar(
+            "usergroup-ids",
+            action="/group/action",
+            add=add_button,
+        )
+        html, code = bar.render(usergroup_table)
+
+    else:
+        html = t.div()[usergroup_table]
         code = ""
 
     code += template_datatable_js
