@@ -11,8 +11,6 @@ from typing import Any, Self, Callable, Awaitable
 from dataclasses import dataclass
 from functools import cached_property
 
-from markupsafe import Markup, escape
-
 from sqlalchemy.orm import object_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import exc
@@ -28,50 +26,54 @@ from ..db.models.enumkey import EnumKeyRegistry
 
 
 class ParseFormError(ValueError):
+    """Raised when form validation fails for one or more fields."""
 
-    def __init__(self, error_list: list[(str, str)]):
+    def __init__(self, error_list: list[tuple[str, str]]):
         """
-        Docstring for __init__
-
-        :param error_list: list of tuples of (message, field name)
+        :param error_list: list of ``(message, field_name)`` tuples describing each error
         """
         super().__init__(f"Value error(s) in {len(error_list)} field(s): {error_list}")
         self.error_list = error_list
 
 
 class DatabaseUpdateError(ValueError):
+    """Raised when a database flush fails and can be attributed to a specific field."""
 
     def __init__(self, message: str, input_field: InputField):
         """
-        Docstring for __init__
-
+        :param message: human-readable error description
         :param input_field: the InputField instance that caused the error
-        :param message: message to be shown
         """
         super().__init__(message)
         self.input_field = input_field
 
 
 class TimeStampError(ValueError):
+    """Raised when the form's timestamp does not match the object's ``updated_at``.
+
+    This indicates a concurrent modification conflict.
+    """
 
     def __init__(self, message: str):
-        """
-        Docstring for __init__
-
-        :param message: message to be shown
-        """
         super().__init__(message)
 
 
 @dataclass
 class _InputFieldProxy:
-    """
-    _InputFieldProxy convert the operation to either validator or forminput
+    """Proxy that bridges an InputField descriptor and a specific ModelForm instance.
+
+    When a ModelForm instance accesses a field attribute (e.g. ``self.login``),
+    the InputField descriptor returns a proxy that knows both the field
+    definition and the current form data / database object.  The proxy is
+    used for:
+    - Retrieving the current value (from submitted data or the DB object)
+    - Delegating validation and transformation to the underlying Validator
+    - Generating the HTML form input via the tagato ``forminput`` class
     """
 
-    owner_instance: Any  # the instance of ModelForm
-    name: str  # the name of the field
-    input_field: InputField  # the InputField instance
+    owner_instance: Any  # the ModelForm instance
+    name: str  # the field attribute name
+    input_field: InputField  # the InputField descriptor instance
 
     def get_name(self) -> str:
         return self.name
@@ -86,8 +88,8 @@ class _InputFieldProxy:
             return getattr(obj, self.name, "") or ""
         return ""
 
-    def get_options(self) -> list[tuple[int, str]]:
-        return []
+    def get_options(self) -> list[tuple[int, str]] | None:
+        return None
 
     def is_required(self) -> bool:
         return self.input_field.validator.required
@@ -105,17 +107,20 @@ class _InputFieldProxy:
             input_provider=self,
         )
 
-    def opts(self, **kwargs: Any) -> f.BaseInput:
+    def opts(self, **kwargs: Any) -> Self:
+        """Forward display options to the underlying form input widget."""
         self.form_input.opts(**kwargs)
         return self
 
     def __tag__(self) -> t.Tag:
+        """Tagato rendering protocol — returns the form input widget."""
         return self.form_input
 
 
 class _ForeignKeyInputFieldProxy(_InputFieldProxy):
+    """Proxy for ForeignKeyField — resolves value as ``(id, display_text)`` tuple."""
 
-    def opts(self, option_callback=None, **kwargs: Any) -> f.BaseInput:
+    def opts(self, option_callback=None, **kwargs: Any) -> Self:
         if option_callback is not None:
             self.form_input.option_callback = option_callback
         self.form_input.opts(**kwargs)
@@ -144,12 +149,12 @@ class _ForeignKeyInputFieldProxy(_InputFieldProxy):
             if value is not None and self.input_field.foreignkey_for is not None:
                 related_obj = getattr(obj, self.input_field.foreignkey_for)
                 text = getattr(related_obj, self.input_field.text_from, "")
-            # print(f"ForeignKeyField object={obj} get_value: value={value}, text={text}")
             return (value, text)
         return (None, "")
 
 
 class _EnumKeyInputFieldProxy(_InputFieldProxy):
+    """Proxy for EnumKeyField — resolves value from the in-memory EnumKeyRegistry."""
 
     def get_value(self) -> tuple[int | None, str | None]:
         obj = getattr(self.owner_instance, "obj", None)
@@ -183,9 +188,9 @@ class _EnumKeyInputFieldProxy(_InputFieldProxy):
 
 
 class _DBEnumKeyInputFieldProxy(_InputFieldProxy):
-    """this class is for ForeignKeyField that reference EnumKey"""
+    """Proxy for DBEnumKeyField — resolves value from a DB-backed EnumKey relation."""
 
-    def opts(self, option_callback=None, **kwargs: Any) -> f.BaseInput:
+    def opts(self, option_callback=None, **kwargs: Any) -> Self:
         if option_callback is not None:
             self.form_input.option_callback = option_callback
         self.form_input.opts(**kwargs)
@@ -215,6 +220,15 @@ class _DBEnumKeyInputFieldProxy(_InputFieldProxy):
 
 @dataclass
 class InputField:
+    """Descriptor that combines a Validator with a form input widget.
+
+    When assigned as a class attribute on a ModelForm subclass, the Python
+    descriptor protocol (``__set_name__`` / ``__get__``) automatically
+    registers the field and returns a proxy bound to each form instance.
+
+    Subclasses (StringField, ForeignKeyField, etc.) provide convenient
+    constructors that wire up the appropriate validator and form widget.
+    """
 
     validator: v.Validator
     forminput: type[f.BaseInput]
@@ -231,22 +245,28 @@ class InputField:
     foreignkey_for: str | None = None
     text_from: str | None = None
 
-    # the proxy
+    # the proxy class to use when accessing this field on an instance
     proxy_class: type = _InputFieldProxy
 
-    field_list = "__fields__"
+    _FIELD_LIST_ATTR = "__fields__"
 
     def __post_init__(self) -> None:
+        # Link the validator back to this InputField so it can lazily
+        # resolve the attribute name via its cached_property._name
         self.validator.set_owner_instance(self)
 
     def __set_name__(self, owner: Any, name: str) -> None:
+        """Called by Python when this descriptor is assigned to a class attribute.
+
+        Registers the field name in the owner class's ``__fields__`` list so
+        that ModelForm.validate / .update can iterate over all declared fields.
+        """
         self._name = name
         self._owner = owner
 
-        if self.field_list not in owner.__dict__:
-            setattr(owner, self.field_list, [])
-        getattr(owner, self.field_list).append(name)
-        print(f"Registered field: {name} in {owner}")
+        if self._FIELD_LIST_ATTR not in owner.__dict__:
+            setattr(owner, self._FIELD_LIST_ATTR, [])
+        getattr(owner, self._FIELD_LIST_ATTR).append(name)
 
     def __set__(self, instance: Any, value: Any) -> None:
         raise AttributeError(
@@ -254,20 +274,14 @@ class InputField:
         )
 
     def __get__(self, instance: Any, owner: Any) -> Any:
+        """Return the InputField class object when accessed on the class,
+        or a cached proxy bound to the form instance when accessed on
+        an instance.
         """
-        Docstring for __get__
-
-        :param instance: the instance of the owner class
-        :type instance: Any {usually ModelForm]}
-        :param owner: the owner class
-        :type owner: Any [usually type[ModelForm]]
-        :return: an instance of class that can be used to validate
-        :rtype: Any
-        """
-
         if instance is None:
             return self
 
+        # Cache proxies per-instance to avoid recreating them on every access
         proxy_cache = instance.__dict__.setdefault("_input_field_proxy_cache", {})
         if self._name not in proxy_cache:
             proxy_cache[self._name] = self.proxy_class(instance, self._name, self)
@@ -282,6 +296,15 @@ class InputField:
     def _forminput(self) -> f.BaseInput:
         return self.forminput(label=self.label, input_provider=self)
 
+    async def async_prerender(
+        self, controller: Any = None, field_proxy: _InputFieldProxy | None = None
+    ) -> None:
+        """Hook for subclasses that need async work before rendering.
+
+        The default implementation is a no-op.  Override in field types
+        that need to fetch options or perform other async setup.
+        """
+
     async def _async_prerender_options(
         self, controller: Any = None, field_proxy: _InputFieldProxy | None = None
     ) -> None:
@@ -292,17 +315,20 @@ class InputField:
         )
 
         option_async_callback = getattr(self, "option_async_callback", None)
-        if form_input.options is None and option_async_callback is not None:
+        if form_input.get_options() is None and option_async_callback is not None:
             func = option_async_callback(controller)
-            form_input.options = await func()
+            options = await func()
             if (
                 form_input.input_provider
                 and not form_input.input_provider.is_required()
             ):
-                form_input.options = [("", "")] + form_input.options
+                options = [("", "")] + options
+            form_input.opts(options=options)
+            # form_input.options = options
 
 
 class StringField(InputField):
+    """Text input field with string validation."""
 
     def __init__(
         self,
@@ -322,6 +348,7 @@ class StringField(InputField):
 
 
 class AlphanumPlusField(InputField):
+    """Text input field that only accepts alphanumeric chars and ``+ - _ .``"""
 
     def __init__(
         self,
@@ -341,6 +368,7 @@ class AlphanumPlusField(InputField):
 
 
 class AlphanumField(InputField):
+    """Text input field that only accepts alphanumeric characters."""
 
     def __init__(
         self,
@@ -360,6 +388,7 @@ class AlphanumField(InputField):
 
 
 class UUIDField(InputField):
+    """Text input field with UUID format validation."""
 
     def __init__(
         self,
@@ -376,51 +405,67 @@ class UUIDField(InputField):
         super().__init__(label=label, validator=_validator, forminput=forminput)
 
 
-def EmailField(
-    label: str,
-    required: bool = False,
-    max_length: int | None = None,
-    validator: v.Validator = v.Email,
-    forminput: f.FormField = f.TextInput,
-    **kwargs: Any,
-) -> InputField:
-    _validator = validator(
-        required=required,
-        max_length=max_length,
-        **kwargs,
-    )
-    return InputField(label=label, validator=_validator, forminput=forminput)
+class EmailField(InputField):
+    """Text input field with email format validation."""
+
+    def __init__(
+        self,
+        label: str,
+        required: bool = False,
+        max_length: int | None = None,
+        validator: v.Validator = v.Email,
+        forminput: f.FormField = f.TextInput,
+        **kwargs: Any,
+    ) -> None:
+        _validator = validator(
+            required=required,
+            max_length=max_length,
+            **kwargs,
+        )
+        super().__init__(label=label, validator=_validator, forminput=forminput)
 
 
-def IntField(
-    label: str,
-    required: bool = False,
-    validator: v.Validator = v.Int,
-    forminput: f.FormField = f.TextInput,
-    **kwargs: Any,
-) -> InputField:
-    _validator = validator(
-        required=required,
-        **kwargs,
-    )
-    return InputField(label=label, validator=_validator, forminput=forminput)
+class IntField(InputField):
+    """Text input field with integer validation."""
+
+    def __init__(
+        self,
+        label: str,
+        required: bool = False,
+        validator: v.Validator = v.Int,
+        forminput: f.FormField = f.TextInput,
+        **kwargs: Any,
+    ) -> None:
+        _validator = validator(
+            required=required,
+            **kwargs,
+        )
+        super().__init__(label=label, validator=_validator, forminput=forminput)
 
 
-def FloatField(
-    label: str,
-    required: bool = False,
-    validator: v.Validator = v.Float,
-    forminput: f.FormField = f.TextInput,
-    **kwargs: Any,
-) -> InputField:
-    _validator = validator(
-        required=required,
-        **kwargs,
-    )
-    return InputField(label=label, validator=_validator, forminput=forminput)
+class FloatField(InputField):
+    """Text input field with float validation."""
+
+    def __init__(
+        self,
+        label: str,
+        required: bool = False,
+        validator: v.Validator = v.Float,
+        forminput: f.FormField = f.TextInput,
+        **kwargs: Any,
+    ) -> None:
+        _validator = validator(
+            required=required,
+            **kwargs,
+        )
+        super().__init__(label=label, validator=_validator, forminput=forminput)
 
 
 class ForeignKeyField(InputField):
+    """Select input for foreign key relationships.
+
+    Supports async option loading via ``option_async_callback``.
+    """
 
     def __init__(
         self,
@@ -459,6 +504,7 @@ class ForeignKeyField(InputField):
 
 
 class SelectField(InputField):
+    """Generic select input field with static or async option lists."""
 
     def __init__(
         self,
@@ -475,20 +521,27 @@ class SelectField(InputField):
     ) -> None:
         _validator = validator(
             required=required,
-            options=options,
-            option_callback=option_callback,
             **kwargs,
         )
         super().__init__(
             label=label,
             validator=_validator,
             forminput=forminput,
-            options=options,
-            options_async_callback=options_async_callback,
         )
+        # Store select-specific attributes on the field instance
+        self.options = options
+        self.option_callback = option_callback
+        self.option_async_callback = options_async_callback
+
+    async def async_prerender(
+        self, controller: Any = None, field_proxy: _InputFieldProxy | None = None
+    ) -> None:
+        """Fetch options via callback if not already populated."""
+        await self._async_prerender_options(controller, field_proxy)
 
 
 class EnumKeyField(InputField):
+    """Select input for in-memory EnumKey registries."""
 
     def __init__(
         self,
@@ -513,6 +566,7 @@ class EnumKeyField(InputField):
 
 
 class DBEnumKeyField(InputField):
+    """Select input for database-backed EnumKey foreign keys."""
 
     def __init__(
         self,
@@ -548,6 +602,7 @@ class DBEnumKeyField(InputField):
 
 
 class CheckboxField(InputField):
+    """Checkbox input with boolean validation."""
 
     def __init__(
         self,
@@ -564,6 +619,13 @@ class CheckboxField(InputField):
         super().__init__(label=label, validator=_validator, forminput=forminput)
 
 
+# ------------------
+#
+#  Utilities
+#
+# ------------------
+
+
 def form_submit_bar(create: bool = False) -> t.Tag:
     if create:
         return ct.custom_submit_bar(
@@ -574,9 +636,25 @@ def form_submit_bar(create: bool = False) -> t.Tag:
     ).set_offset(2)
 
 
+# ----------------
+#
+#  Main ModelForm class
+#
+# -----------------
+
+
 class ModelForm:
-    """
-    This class functions as DTO, data validator, and HTML form generator
+    """Base class that combines DTO, data validation, and HTML form generation.
+
+    Subclasses declare fields as class attributes using InputField descriptors
+    (StringField, ForeignKeyField, etc.) and override ``set_layout()`` to
+    define the HTML form structure.
+
+    The class provides:
+    - ``validate()`` — validates submitted data against all declared fields
+    - ``update()`` — applies validated data to the database object
+    - ``validate_and_update()`` — combines both with optimistic concurrency via timestamps
+    - ``html_form()`` — renders a complete HTML form with error display
     """
 
     model_type: type[Any] | None = None
@@ -588,22 +666,21 @@ class ModelForm:
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        # Automatically update class variable
-        if hasattr(cls, "model_type"):
-            if isinstance(cls.model_type, type):
-                cls.model_name = cls.model_type.__name__
-                cls.form_name = "lp-" + cls.model_name
-                cls.controller_for_edit = cls.model_name.lower() + "-edit"
-                cls.controller_for_update = cls.model_name.lower() + "-update"
+        # Derive conventional names from model_type for form rendering and routing
+        if cls.model_type is not None and isinstance(cls.model_type, type):
+            cls.model_name = cls.model_type.__name__
+            cls.form_name = "lp-" + cls.model_name
+            cls.controller_for_edit = cls.model_name.lower() + "-edit"
+            cls.controller_for_update = cls.model_name.lower() + "-update"
 
     def __init__(
         self,
         obj: Any | None = None,
-        data: dict[str, Any] = {},
+        data: dict[str, Any] | None = None,
         dbid: int = -1,
     ) -> None:
         self.obj: Any = obj
-        self.data: dict[str, Any] = data
+        self.data: dict[str, Any] = data if data is not None else {}
         self.dbid: int = (
             dbid if dbid >= 0 else (obj.id if (obj and hasattr(obj, "id")) else -1)
         )
@@ -613,8 +690,9 @@ class ModelForm:
 
     # override this method to set the layout
     async def set_layout(self, controller: Any = None) -> t.Tag:
-        """
-        Set the layout of the form
+        """Define the form layout using tagato form fields.
+
+        Must be overridden in subclasses to define the form structure.
         """
         raise NotImplementedError("set_layout method must be implemented in subclass")
 
@@ -622,21 +700,26 @@ class ModelForm:
     def process_integrity_error(
         self, error: exc.IntegrityError, data: dict[str, Any], dbsession: AsyncSession
     ) -> None:
-        """
-        Process the integrity error and raise DatabaseUpdateError if possible
+        """Convert an IntegrityError into a user-friendly DatabaseUpdateError.
+
+        Override in subclasses to provide field-specific error messages
+        for unique constraint violations, etc.
         """
         raise error
 
     def validate(self, obj: Any, data: dict[str, Any]) -> None:
-        """
-        Validate the form data based on the obj
+        """Validate all declared fields against the submitted data.
+
+        :param obj: the current database object (passed to validators for
+            context-aware checks like allowing empty required fields on update)
+        :param data: the submitted form data dict
+        :raises ParseFormError: if any fields fail validation
         """
         error_list = []
 
         for field_name in self.__fields__:
             if not hasattr(self, field_name):
                 continue
-            print("validating field:", field_name)
             field_validator: v.Validator = getattr(self, field_name)
             value = data.get(field_name, None)
             result, err_msg = field_validator.validate(value, obj=obj)
@@ -646,48 +729,96 @@ class ModelForm:
         if any(error_list):
             raise ParseFormError(error_list)
 
-    async def update(
-        self, obj: Any, data: dict[str, Any], dbsession: AsyncSession
-    ) -> None:
+    def transform(self, obj: Any, data: dict[str, Any]) -> dict[str, Any]:
+        """Transform submitted data into the format expected by the database object.
+
+        This applies each field's transformation (type conversion, stripping,
+        etc.) without actually setting the values on the object.  The resulting
+        dict can be used for partial updates or other purposes.
+
+        :param obj: the current database object (passed to validators for context-aware transformations)
+        :param data: the submitted form data dict
+        :return: a new dict with transformed values for each field present in ``data``
         """
-        Update the object with the form data, this assume that the data has been validated
+
+        transformed_data = {}
+        error_list = []
+
+        for field_name in self.__fields__:
+            if not hasattr(self, field_name):
+                continue
+            if field_name not in data:
+                continue
+            field_validator: v.Validator = getattr(self, field_name)
+            value = data.get(field_name)
+            result, err_msg = field_validator.validate(value, obj=obj)
+            if not result:
+                error_list.append((f"Invalid {field_name}: {err_msg}", field_name))
+
+            transformed_value = field_validator.transform(value)
+            transformed_data[field_name] = transformed_value
+
+        if any(error_list):
+            raise ParseFormError(error_list)
+
+        return transformed_data
+
+    async def update(self, obj: Any, data: dict[str, Any], dbhandler: Any) -> None:
+        """Apply transformed form data to the database object and flush.
+
+        Only fields present in ``data`` are updated.
+
+        :raises ValueError: if the object is not attached to a session
+        :raises DatabaseUpdateError: if an IntegrityError occurs and
+            ``process_integrity_error`` converts it
         """
 
         if object_session(obj) is None:
             raise ValueError("Object is not attached to a session")
 
+        await self.before_update(obj, data, dbhandler.session)
+
+        try:
+            srv = dbhandler.get_service(self.model_type)
+            await srv.update_from_dict(obj, data)
+
+        except exc.IntegrityError as e:
+            self.process_integrity_error(e, data, dbhandler.session)
+
+        except Exception:
+            raise
+
+        return
+
+        if object_session(obj) is None:
+            raise ValueError("Object is not attached to a session")
+
+        await self.before_update(obj, data, dbsession)
+
         for field_name in self.__fields__:
-            print("processing field:", field_name)
             if not hasattr(self, field_name):
-                print(f"Field {field_name} is not defined in the form, skipping")
                 continue
             if field_name not in data:
-                print(f"Field {field_name} is not in the data, skipping")
-                print(data)
-                # field_name is not updated in the data
+                # Field was not submitted — skip (partial update)
                 continue
-            field_validator: v.Validator = getattr(self, field_name)
             value = data.get(field_name)
-            transformed_value = field_validator.transform(value)
-            print("updating field:", field_name, "with value:", transformed_value)
-            setattr(obj, field_name, transformed_value)
+            setattr(obj, field_name, value)
 
-        # get database session of the object and flush to save changes
+        # Flush to persist changes and catch constraint violations
         try:
             await dbsession.flush()
 
         except exc.IntegrityError as e:
-            # await dbsession.rollback()
             self.process_integrity_error(e, data, dbsession)
 
-        except Exception as e:
-            # this should convert to ParseFormError if possible
-            # or updating flash messages
-            raise e
+        except Exception:
+            raise
 
     def check_timestamp(self, obj: Any, data: dict[str, Any]) -> None:
-        """
-        Check the timestamp of the object with the form data, and raise ParseFormError if the timestamp is invalid
+        """Verify optimistic concurrency by comparing timestamps.
+
+        :raises ParseFormError: if the timestamp is missing
+        :raises TimeStampError: if another user/process modified the record
         """
         form_stamp = data.get("stamp", None)
         obj_stamp = getattr(obj, "updated_at", None)
@@ -698,58 +829,68 @@ class ModelForm:
                 "The data has been modified by another user or process. Please refresh and try again."
             )
 
-    async def validate_and_update(
+    async def before_update(
+        self, obj: Any, data: dict[str, Any], dbsession: AsyncSession
+    ) -> dict[str, Any]:
+        """Hook for performing actions before updating the object.
+
+        Override in subclasses to implement custom pre-update logic, such as
+        modifying data, performing additional validation, etc.
+        """
+        return data
+
+    async def transform_and_update(
         self,
         data: dict[str, Any],
-        dbsession: AsyncSession,
+        dbhandler: Any | None,
         check_timestamp: bool = True,
     ) -> None:
-        """
-        Validate and update the object with the form data
-        """
+        """Validate, check concurrency, and persist form data in one step."""
 
-        self.validate(self.obj, data)
         if check_timestamp:
             self.check_timestamp(self.obj, data)
-        await self.update(self.obj, data, dbsession)
+        transformed_data = self.transform(self.obj, data)
+        await self.update(self.obj, transformed_data, dbhandler)
 
     async def async_prerender(self, controller: Any = None) -> None:
-        """
-        This method can be overridden to do some asynchronous operation before
-        rendering the form
-        """
+        """Run async prerender hooks on all fields that need them.
 
+        Delegates to each InputField's ``async_prerender`` method, which is
+        a no-op by default and overridden by field types that need to fetch
+        options or perform other async setup (e.g. ForeignKeyField, DBEnumKeyField).
+        """
         for field_name in self.__fields__:
             field_proxy = getattr(self, field_name)
-            input_field = field_proxy.input_field
-            if isinstance(input_field, ForeignKeyField):
-                await input_field.async_prerender(controller, field_proxy=field_proxy)
-            elif isinstance(input_field, DBEnumKeyField):
-                await input_field.async_prerender(controller, field_proxy=field_proxy)
+            await field_proxy.input_field.async_prerender(
+                controller, field_proxy=field_proxy
+            )
 
     async def html_form(
         self,
         request: Request,
         *,
         obj: Any = None,
-        # is this form is for readonly display, or for editing or creating new object
         readonly: bool = False,
-        # is Edit button should be shown when readonly is True
         editable: bool = False,
         controller: Any = None,
-        errors: list[tuple[str, str]] = [],
-    ) -> t.Tag:
-        """
-        Render the HTML form for creating or editing user domains
-        """
+        errors: list[tuple[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        """Render the complete HTML form with header, layout, and submit bar.
 
+        :param request: the Litestar request (used for URL generation)
+        :param obj: override the form's object for rendering
+        :param readonly: render the form in read-only mode
+        :param editable: show an "Edit" button when ``readonly`` is True
+        :param controller: application controller (passed to set_layout and prerender)
+        :param errors: list of ``(message, field_name)`` tuples to display as field errors
+        :return: dict with ``html``, ``jscode``, ``pyscode``, ``scriptlinks`` keys
+        """
         obj = obj or self.obj
+        if errors is None:
+            errors = []
 
         form_title = (
             f"Editing {self.model_name}" if obj else f"Create {self.model_name}"
-        )
-        submit_label = (
-            "Edit" if readonly else ("Update" if (obj and obj.id) else "Create")
         )
 
         # generate form using forminputs module
@@ -775,7 +916,7 @@ class ModelForm:
                             self.controller_for_edit,
                             dbid=obj.id if (obj and obj.id) else 0,
                         ),
-                        class_="btn btn-secondary",
+                        class_="btn btn-primary",
                     )["Edit"]
                     if (editable and readonly)
                     else ""
@@ -784,18 +925,18 @@ class ModelForm:
             ],
         ]
 
-        # await form.async_preprocess()
+        # Run async prerender hooks (e.g. fetch select options)
         await self.async_prerender(controller=controller)
 
-        if any(errors):
-            for err_msg, field_name in errors:
-                el = form.get_element(field_name)
-                el.opts(error=err_msg)
-                print(f"Set error for field {field_name}: {err_msg}")
+        # Apply any validation errors to their respective form elements
+        for err_msg, field_name in errors:
+            el = form.get_element(field_name)
+            el.opts(error=err_msg)
 
         return dict(
             html=t.fragment()[
                 self.header(),
+                t.hr,
                 form,
             ],
             jscode="\n".join(self.jscode),
@@ -820,7 +961,7 @@ class ModelForm:
                     (
                         self.obj.updated_by.login
                         if (self.obj and self.obj.updated_by)
-                        else ""
+                        else "-"
                     ),
                 ],
             ],
