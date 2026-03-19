@@ -10,9 +10,23 @@ __license__ = "MPL-2.0"
 from litestar import response
 from litestar.enums import MediaType
 
+# context injector
+
+__context_injector__ = []
+
+
+# generate a decorator function that injects context into the template rendering function
+def context_injector(func):
+    global __context_injector__
+    __context_injector__.append(func)
+
 
 class Template(response.Template):
     def __init__(self, **kwargs):
+
+        for func in __context_injector__:
+            func(kwargs["context"])
+
         # Force the media type to HTML regardless of filename
         kwargs.setdefault("media_type", MediaType.HTML)
         super().__init__(**kwargs)
