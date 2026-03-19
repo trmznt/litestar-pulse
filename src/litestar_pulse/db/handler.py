@@ -134,6 +134,11 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
         return instance
 
 
+class EnumKeyService(LPBaseService[enumkey.EnumKey]):
+    model_type = enumkey.EnumKey
+    repository_type = EnumKeyRepo
+
+
 class UserDomainService(LPBaseService[account.UserDomain]):
     model_type = account.UserDomain
     repository_type = UserDomainRepo
@@ -218,6 +223,11 @@ class LPHandler:
         # prepare all AsyncServices here, which will be specific for
         # each handler instance
         self.service = types.SimpleNamespace()
+        self.service.EnumKey = lop.Proxy(
+            lambda: EnumKeyService(
+                session=self.session, repository=self.repo.EnumKey.__wrapped__
+            )
+        )
         self.service.UserDomain = lop.Proxy(
             lambda: UserDomainService(
                 session=self.session, repository=self.repo.UserDomain.__wrapped__
