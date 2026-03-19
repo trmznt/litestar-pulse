@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
+import msgspec
 
 from litestar.middleware.session.server_side import (
     ServerSideSessionBackend,
@@ -28,6 +29,7 @@ from litestar.handlers import BaseRouteHandler
 
 
 from litestar_pulse.db.models import account
+from litestar_pulse.db.models.coremixins import set_current_userid
 from litestar_pulse.config.app import session_config, logger
 from litestar_pulse.lib.crypt import verify_password
 
@@ -40,15 +42,21 @@ class LPSessionAuthMiddleware(SessionAuthMiddleware):
     async def authenticate_request(
         self, connection: ASGIConnection
     ) -> AuthenticationResult:
+        # Reset at request-auth start so unexpected errors cannot leak prior values.
+        set_current_userid(None)
+
         # Check if session exists in scope to avoid unnecessary processing
         if "session" not in connection.scope or not connection.scope["session"]:
             return AuthenticationResult(user=None, auth=None)
 
         try:
-            return await super().authenticate_request(connection)
+            auth_result = await super().authenticate_request(connection)
+            set_current_userid(getattr(auth_result.user, "id", None))
+            return auth_result
         except NotAuthorizedException:
             # Catch ONLY the "No session/user found" case
             # This ensures request.user is set to None instead of raising a 401
+            set_current_userid(None)
             return AuthenticationResult(user=None, auth=None)
         # Any other exception (e.g. DB error in retrieve_user_handler) will still raise 500
 
@@ -58,6 +66,7 @@ async def retrieve_user_handler(
 ) -> account.UserInstance | None:
     d = session.get("user", None)
     logger.info("Retrieving user from session: %s", d)
+    return msgspec.convert(d, type=account.UserInstance) if d else None
     return account.UserInstance(**d) if d else None
 
 
