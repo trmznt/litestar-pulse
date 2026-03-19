@@ -7,14 +7,26 @@ __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
 
+import re
 from functools import cached_property
-from os import name
-from typing import Any, Tuple
-from unicodedata import name
+from typing import Any
 from dataclasses import dataclass
+
+# Pre-compiled regex patterns for validation (avoids recompilation on each call)
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
 
 
 class _FieldValidator:
+    """Provides field-level access to validation and value retrieval.
+
+    Acts as a bridge between a model instance and a Validator, resolving
+    the current field value from the model object and delegating
+    validation/transformation to the owning Validator.
+    """
+
     def __init__(self, owner_instance: Any, name: str, validator: Validator) -> None:
         self._owner_instance = owner_instance
         self._name = name
@@ -26,7 +38,7 @@ class _FieldValidator:
             return getattr(obj, self._name, "") or ""
         return ""
 
-    def validate(self, value: Any, obj: Any | None = None) -> Tuple[bool, str]:
+    def validate(self, value: Any, obj: Any | None = None) -> tuple[bool, str]:
         return self._validator.validate(value, obj=obj)
 
     def transform(self, value: Any) -> Any:
@@ -34,6 +46,11 @@ class _FieldValidator:
 
 
 class _EnumKeyIntFieldValidator(_FieldValidator):
+    """Field validator for EnumKey foreign key fields.
+
+    Resolves the current value as a (id, text) tuple from the EnumKey
+    proxy on the model class, and provides option lists for select inputs.
+    """
 
     def get_value(self) -> tuple[int | None, str | None]:
         obj = getattr(self._owner_instance, "obj", None)
@@ -63,6 +80,11 @@ class _EnumKeyIntFieldValidator(_FieldValidator):
 
 
 class _ForeignKeyIntFieldValidator(_FieldValidator):
+    """Field validator for standard foreign key integer fields.
+
+    Resolves the current value as a (id, text) tuple by traversing
+    the foreign key relationship on the model object.
+    """
 
     def get_value(self) -> tuple[int | None, str | None]:
         obj = getattr(self._owner_instance, "obj", None)
@@ -78,7 +100,16 @@ class _ForeignKeyIntFieldValidator(_FieldValidator):
 
 @dataclass
 class Validator:
-    """Validator class for form fields."""
+    """Declarative validator for form fields.
+
+    Encapsulates validation rules (type, length, format) and transformation
+    logic for converting raw form input into typed Python values.
+
+    Validators are owned by InputField instances in formbuilder and should
+    not be used as descriptors directly. The ``set_owner_instance`` method
+    links a Validator back to its owning InputField so that the field name
+    can be resolved lazily via the ``_name`` cached property.
+    """
 
     type: type = str
     required: bool = False
@@ -94,76 +125,46 @@ class Validator:
     text_from: str | None = None
     field_validator_class: type = _FieldValidator
 
-    field_list = "__fields__"
-
-    def xxx__set_name__(self, owner: Any, name: str) -> None:
-        self._name = name
-        self._owner = owner
-
-        if self.field_list not in owner.__dict__:
-            setattr(owner, self.field_list, [])
-        getattr(owner, self.field_list).append(name)
-        print(f"Registered field: {name} in {owner}")
-
     @cached_property
     def _name(self) -> str:
+        """Lazily resolve the field name from the owning InputField.
+
+        This is a cached_property because ``set_owner_instance`` is called
+        during InputField.__post_init__ (before __set_name__ assigns the
+        name), so the name must be resolved on first access rather than
+        at construction time.
+        """
         return self._owner_instance._name
 
-    def __set__(self, instance: Any, value: Any) -> None:
-        raise AttributeError(
-            "Validator instance is not supposed to be set with a value."
-        )
-
-    def __get__(self, instance: Any, owner: Any) -> Any:
-        """
-        Docstring for __get__
-
-        :param instance: the instance of the owner class
-        :type instance: Any
-        :param owner: the owner class
-        :type owner: Any
-        :return: an instance of class that can be used to validate
-        :rtype: Any
-        """
-
-        return self.field_validator_class(instance, self._name, self)
-
     def set_owner_instance(self, owner_instance: Any) -> None:
+        """Link this validator to its owning InputField."""
         self._owner_instance = owner_instance
 
-    def xxx_get_value(self) -> Any:
-        obj = getattr(self._owner_instance, "obj", None)
-        if obj is not None:
-            if self.foreignkey_for is not None:
-                value = getattr(obj, self._name)
-                text = getattr(obj, self.foreignkey_for, "") or ""
-                return (value, text)
-            return getattr(obj, self._name, "") or ""
-        return ""
+    def validate(self, value: Any, obj: Any | None = None) -> tuple[bool, str]:
+        """Validate the given value based on the validator's rules.
 
-    def validate(self, value: Any, obj: Any | None = None) -> Tuple[bool, str]:
+        :param value: the raw input value to validate
+        :param obj: the current database object (used to allow empty required
+            fields during updates when the object already has a value)
+        :return: ``(True, "")`` on success, ``(False, error_message)`` on failure
         """
-        Validate the given value based on the validator's rules.
-
-        :param value: value to validate
-        :type value: Any
-        :param obj: curent database object
-        :type obj: Any | None
-        :return: valid or not, error message if any
-        :rtype: Tuple[bool, str]
-        """
+        # Allow empty values for non-required fields
         if not self.required and (value is None or value == ""):
             return (True, "")
 
         if self.strip and isinstance(value, str):
             value = value.strip()
 
-        if self.required and (value is None or value.strip() == ""):
-            # if obj is already set, we may allow None for required fields during update
+        # Check required constraint — safely handle non-string values
+        if self.required and (
+            value is None or (isinstance(value, str) and value.strip() == "")
+        ):
+            # During updates, allow empty if the object already has a value
             if obj is not None and getattr(obj, self._name, None) is not None:
                 return (True, "")
             return (False, "This field is required.")
 
+        # Boolean validation (early return — bool rules differ from other types)
         if self.type == bool:
             if not isinstance(value, bool):
                 if isinstance(value, str):
@@ -182,6 +183,19 @@ class Validator:
                     return (False, "This field must be a boolean value.")
             return (True, "")
 
+        # Numeric type validation
+        if self.type in (int, float):
+            try:
+                numeric_value = self.type(value)
+            except (ValueError, TypeError):
+                type_name = self.type.__name__
+                return (False, f"This field must be a valid {type_name}.")
+            if self.min_value is not None and numeric_value < self.min_value:
+                return (False, f"Value must be at least {self.min_value}.")
+            if self.max_value is not None and numeric_value > self.max_value:
+                return (False, f"Value must be at most {self.max_value}.")
+
+        # String format validations
         if self.alphanum and not str(value).isalnum():
             return (False, "This field must be alphanumeric.")
 
@@ -199,23 +213,12 @@ class Validator:
                 f"This field must be at most {self.max_length} characters long.",
             )
 
-        if self.uuid:
-            import re
+        # Use pre-compiled module-level regex patterns for performance
+        if self.uuid and not _UUID_RE.match(str(value)):
+            return (False, "This field must be a valid UUID.")
 
-            uuid_regex = re.compile(
-                r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-            )
-            if not uuid_regex.match(str(value)):
-                return (False, "This field must be a valid UUID.")
-
-        if self.email:
-            import re
-
-            email_regex = re.compile(
-                r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
-            )
-            if not email_regex.match(str(value)):
-                return (False, "This field must be a valid email address.")
+        if self.email and not _EMAIL_RE.match(str(value)):
+            return (False, "This field must be a valid email address.")
 
         return (True, "")
 
