@@ -49,6 +49,7 @@ from litestar_pulse.lib.debugger import SelectiveDebugger
 from litestar_pulse.lib.exceptions import handle_not_found, mako_html_exception_handler
 from litestar_pulse.lib.auth import session_auth
 from litestar_pulse.lib.utils import resources_to_paths
+from litestar_pulse.lib.template import context_injector
 
 
 async def provide_transaction(
@@ -67,6 +68,7 @@ async def provide_transaction(
 
 def init_app() -> Litestar:
 
+    from litestar_pulse.views.components import user_menu
     from litestar_pulse.views.home import HomeView
 
     from litestar_pulse.views.login import LoginView
@@ -125,6 +127,11 @@ def init_app() -> Litestar:
         pdb_on_exception = True
     else:
         pdb_on_exception = False
+
+    def add_helper_context(kwargs: dict) -> None:
+        kwargs["user_menu"] = user_menu
+
+    context_injector(add_helper_context)
 
     return Litestar(
         route_handlers=[
