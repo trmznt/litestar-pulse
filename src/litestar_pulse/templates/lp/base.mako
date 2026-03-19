@@ -24,10 +24,9 @@
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
-      <div class="collapse navbar-collapse justify-content-stretch" id="navbarCollapse">
-        <div class="navbar-nav mr-auto"></div>
-        <div class="navbar-nav justify-content-stretch">
-        ## ${user_menu(request)}
+      <div class="collapse navbar-collapse" id="navbarCollapse">
+        <div class="navbar-nav ms-auto">
+        ${user_menu(request)}
         </div>
       </div>
     </nav>
@@ -36,7 +35,7 @@
     <div class="container-fluid">
 
       <div class="row"><div class="col-md-12">
-      ## ${flash_msg()}
+      ${flash_msg()}
       </div></div>
 
       <div class="row"><div class="col-md-12">
@@ -60,7 +59,7 @@
 <%def name="scriptlinks()">
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
     ## <!-- <script src="${request.static_url('rhombus:static/js/jquery.ocupload-min.js')}"></script> -->
-    ${self.jslinks()}
+    ${self.anyscriptlinks()}
     <script type="text/javascript">
         //<![CDATA[
         ${self.jscode()}
@@ -98,22 +97,22 @@
 
         //]]>
     </script>
+
+<script src="//unpkg.com/alpinejs" defer></script>
+
 </%def>
 ##
 ##
 <%def name='flash_msg()'>
-% if request.session.peek_flash():
 
-  % for msg_type, msg_text in request.session.pop_flash():
-   <div class="alert alert-${msg_type} alert-dismissible fade show" role="alert">
-     ${msg_text}
-     <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-       <span aria-hidden="true">&times;</span>
-     </button>
-   </div>
-  % endfor
+## Use Litestar's get_flashes() to retrieve message objects
+% for msg in get_flashes():
+    <div class="alert alert-${msg['category']} alert-dismissible fade show" role="alert">
+        ${msg['message']}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+% endfor
 
-% endif
 </%def>
 
 ##
@@ -121,5 +120,11 @@
 </%def>
 
 ##
-<%def name="jslinks()">
+<%def name='pyscode()'>
 </%def>
+
+##
+<%def name="anyscriptlinks()">
+</%def>
+
+## EOF
