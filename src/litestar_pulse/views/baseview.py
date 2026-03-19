@@ -26,6 +26,7 @@ from litestar.exceptions import NotAuthorizedException
 from litestar_pulse.config.app import logger
 from litestar_pulse.db.handler import handler_factory
 from litestar_pulse.lib.template import Template
+from litestar_pulse.lib import roles as r
 
 from typing import TYPE_CHECKING, Any
 
@@ -52,9 +53,9 @@ if TYPE_CHECKING:
 
 class LPController(Controller):
 
-    managing_roles = {"admin", "manager"}
-    modiying_roles = {"admin", "editor"}
-    viewing_roles = {"admin", "editor", "viewer"}
+    managing_roles = {r.SYSADM}
+    modifying_roles = {r.SYSADM, r.DATAADM}
+    viewing_roles = {r.DATAVIEW}
 
     @classmethod
     async def get_this_controller(cls, handler: BaseRouteHandler) -> LPController:
@@ -78,11 +79,31 @@ class LPController(Controller):
         cls, connection: ASGIConnection, handler: BaseRouteHandler
     ) -> None:
         controller: LPController = await cls.get_this_controller(handler)
-        managing_role = controller.managing_roles
+        managing_role = (
+            controller.model_type.__managing_roles__
+            if controller and hasattr(controller, "model_type")
+            else controller.managing_roles
+        )
 
         logger.info(
             f"guard checking managing role {managing_role} for {cls.__class__.__name__}"
         )
+
+        if hasattr(controller, "model_type") and controller.model_type is not None:
+            if not controller.model_type.can_manage(
+                connection.user.roles if hasattr(connection.user, "roles") else set()
+            ):
+                raise NotAuthorizedException(
+                    "User does not have required managing roles."
+                )
+        else:
+            # Fallback to the controller's managing_roles if no model_type is defined
+            if not controller.managing_roles & (
+                connection.user.roles if hasattr(connection.user, "roles") else set()
+            ):
+                raise NotAuthorizedException(
+                    "User does not have required managing roles."
+                )
 
         # if required_role and connection.user.role != required_role:
         #    raise NotAuthorizedException(f"Missing required role: {required_role}")
@@ -94,13 +115,34 @@ class LPController(Controller):
         # Locate the LPController-derived instance that defines viewing_roles.
 
         controller: LPController = await cls.get_this_controller(handler)
-        viewing_roles = controller.viewing_roles
+        viewing_roles = (
+            controller.model_type.__viewing_roles__
+            if controller and hasattr(controller, "model_type")
+            else controller.viewing_roles
+        )
 
         logger.info(
-            "guard checking viewing role %s for %s",
+            "guard checking viewing role %s for user with roles %s in %s",
             viewing_roles,
+            connection.user.roles if hasattr(connection.user, "roles") else None,
             controller,
         )
+
+        if hasattr(controller, "model_type") and controller.model_type is not None:
+            if not controller.model_type.can_view(
+                connection.user.roles if hasattr(connection.user, "roles") else set()
+            ):
+                raise NotAuthorizedException(
+                    "User does not have required viewing roles."
+                )
+        else:
+            # Fallback to the controller's viewing_roles if no model_type is defined
+            if not controller.viewing_roles & (
+                connection.user.roles if hasattr(connection.user, "roles") else set()
+            ):
+                raise NotAuthorizedException(
+                    "User does not have required viewing roles."
+                )
 
         # if required_role and connection.user.role != required_role:
         #    raise NotAuthorizedException(f"Missing required role: {required_role}")
@@ -221,14 +263,6 @@ class LPBaseView(LPController):
         ctx.setdefault("title", Markup("Viewing ") + self.get_model_title(as_url=True))
         return Template(template_name=self.plain_template_file, context=ctx)
 
-        return Template(
-            template_name=self.template_file,
-            context={
-                "content": content,
-                "title": f"View {self.__class__.__name__}",
-            },
-        )
-
     @get(path="/{dbid:int}/edit", name="edit")
     async def edit_id_html(
         self,
@@ -275,7 +309,7 @@ class LPBaseView(LPController):
         """
         raise NotImplementedError
 
-    @post(path="/{dbid:int}", name="update")
+    @post(path="/{dbid:int}/update", name="update")
     async def update_id_html(
         self,
         dbid: int,
