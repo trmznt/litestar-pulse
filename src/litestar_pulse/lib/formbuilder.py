@@ -17,6 +17,8 @@ from sqlalchemy.orm import object_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import exc
 
+from advanced_alchemy.exceptions import IntegrityError
+
 from litestar import Request
 
 from tagato import tags as t, formfields as f
@@ -1041,6 +1043,9 @@ class ModelForm:
 
         except exc.IntegrityError as e:
             self.process_integrity_error(e, data, dbhandler.session)
+
+        except IntegrityError as e:
+            self.process_integrity_error(e.__cause__, data, dbhandler.session)
 
         except Exception:
             raise
