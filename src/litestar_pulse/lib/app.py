@@ -8,7 +8,6 @@ __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
 
 import os
-import sys
 from pathlib import Path
 from collections.abc import AsyncGenerator
 
@@ -18,6 +17,7 @@ from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from litestar import Litestar
+from litestar.middleware import DefineMiddleware
 from litestar.exceptions import ClientException, NotFoundException
 from litestar.plugins.sqlalchemy import SQLAlchemyAsyncConfig, SQLAlchemyInitPlugin
 
@@ -34,6 +34,7 @@ from litestar.stores.file import FileStore
 from litestar.plugins.flash import FlashPlugin
 from litestar.static_files import create_static_files_router
 
+from debug_toolbar.litestar import DebugToolbarPlugin, LitestarDebugToolbarConfig
 
 from litestar_pulse.config.db import DBConfig
 from litestar_pulse.config.app import (
@@ -48,6 +49,7 @@ from litestar_pulse.db.models.enumkey import EnumKeyRegistry
 from litestar_pulse.lib.debugger import SelectiveDebugger
 from litestar_pulse.lib.exceptions import handle_not_found, mako_html_exception_handler
 from litestar_pulse.lib.auth import session_auth
+from litestar_pulse.lib.middleware import HandlerContextMiddleware
 from litestar_pulse.lib.utils import resources_to_paths
 from litestar_pulse.lib.template import context_injector
 
@@ -64,6 +66,12 @@ async def provide_transaction(
             status_code=HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
+
+
+toolbar_config = LitestarDebugToolbarConfig(
+    enabled=True,
+    extra_panels=["debug_toolbar.extras.advanced_alchemy.SQLAlchemyPanel"],
+)
 
 
 def init_app() -> Litestar:
@@ -105,11 +113,17 @@ def init_app() -> Litestar:
         ),
     )
 
+    plugins = [
+        dbplugin,
+        flash_plugin,
+    ]
+
     # when run in debug mode, use the following exception handlers
     if os.getenv("LITESTAR_DEBUG", "false").lower() in ("1", "true", "yes"):
         logger.info(
             "WARNING: DEBUG MODE IS ENABLED. This should NOT be used in production!"
         )
+        plugins.append(DebugToolbarPlugin(toolbar_config))
         exception_handlers = {
             NotFoundException: handle_not_found,
             Exception: mako_html_exception_handler,
@@ -145,7 +159,10 @@ def init_app() -> Litestar:
             API_v1,
         ],
         dependencies={"transaction": provide_transaction},
-        middleware=[session_config.middleware],
+        middleware=[
+            DefineMiddleware(HandlerContextMiddleware),
+            session_config.middleware,
+        ],
         stores={"sessions": FileStore(path=Path("session_data"))},
         on_app_init=[session_auth.on_app_init],
         on_startup=[preload_enumkeys],
@@ -153,7 +170,7 @@ def init_app() -> Litestar:
         pdb_on_exception=pdb_on_exception,
         logging_config=logging_config,
         template_config=template_config,
-        plugins=[dbplugin, flash_plugin],
+        plugins=plugins,
         exception_handlers=exception_handlers,
     )
 
