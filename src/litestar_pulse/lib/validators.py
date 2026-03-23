@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import yaml
+
 __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
@@ -119,6 +121,7 @@ class Validator:
     uuid: bool = False
     email: bool = False
     strip: bool = True
+    yaml: bool = False
     max_value: int | None = None
     min_value: int | None = None
     list_item_type: type | None = None
@@ -316,6 +319,12 @@ class Validator:
                 False,
                 "This field must be alphanumeric or contain '+', '-', '.', or '_'.",
             )
+
+        if self.yaml:
+            try:
+                yaml.safe_load(str_value)
+            except yaml.YAMLError as e:
+                return (False, f"This field must be valid YAML: {e}")
 
         if self.max_length is not None and len(str_value) > self.max_length:
             return (
@@ -528,6 +537,15 @@ def Boolean(required: bool = False) -> Validator:
     return Validator(
         type=bool,
         required=required,
+    )
+
+
+def YAML(required: bool = False) -> Validator:
+    """Helper function to create a YAML Validator."""
+    return Validator(
+        type=str,
+        required=required,
+        yaml=True,
     )
 
 
