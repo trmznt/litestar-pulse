@@ -257,6 +257,11 @@ class Validator:
             raise ValueError("This field must be a boolean value.")
         if self.uuid and value == "":
             return None
+        if self.yaml:
+            try:
+                return yaml.safe_load(value)
+            except yaml.YAMLError as e:
+                raise ValueError(f"Invalid YAML: {e}") from e
         if not self.required and value == "":
             return None
         return self.type(value) if value is not None else None
