@@ -8,6 +8,7 @@ __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
 
 
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 
@@ -38,6 +39,9 @@ def session_factory() -> Any:
 
 
 __handler_class__: type[Any] | None = None
+__request_handler__: ContextVar[Any | None] = ContextVar(
+    "litestar_pulse_request_handler", default=None
+)
 
 
 def set_handler_class(handler_class: type[Any]) -> None:
@@ -64,6 +68,33 @@ def handler_factory(session: Any) -> Any:
             "Handler class is not set. Please set it using set_handler_class()."
         )
     return __handler_class__(session)
+
+
+def set_handler(handler: Any) -> None:
+    """Bind a handler instance to the current async context (request/task)."""
+    __request_handler__.set(handler)
+
+
+def clear_handler() -> None:
+    """Clear the handler bound to the current async context."""
+    __request_handler__.set(None)
+
+
+def get_handler() -> Any:
+    """
+    Get an instance of the handler based on the context request session using
+    ContextVar
+
+    Returns:
+        An instance of the handler class which is correct for the current request context.
+    """
+    handler = __request_handler__.get()
+    if handler is None:
+        raise RuntimeError(
+            "No request-scoped handler is available in this context. "
+            "Ensure LPController.init_view() has been called for this request."
+        )
+    return handler
 
 
 # EOF
