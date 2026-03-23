@@ -500,6 +500,24 @@ class FloatField(InputField):
         super().__init__(label=label, validator=_validator, forminput=forminput)
 
 
+class YAMLField(InputField):
+    """Text input field with YAML format validation."""
+
+    def __init__(
+        self,
+        label: str,
+        required: bool = False,
+        validator: v.Validator = v.YAML,
+        forminput: f.FormField = f.TextAreaInput,
+        **kwargs: Any,
+    ) -> None:
+        _validator = validator(
+            required=required,
+            **kwargs,
+        )
+        super().__init__(label=label, validator=_validator, forminput=forminput)
+
+
 class ForeignKeyField(InputField):
     """Select input for foreign key relationships.
 
