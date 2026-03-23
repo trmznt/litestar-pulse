@@ -8,7 +8,7 @@
 
 */
 
-body {
+#body-layout {
 /* Show it is fixed to the top */
 	min-height: 75rem;
 	/* padding-top: 4.5rem; */
@@ -91,3 +91,17 @@ div.form-group {
   background-color: #EEE9F1 !important;
 }
 
+.btn-subtle-primary {
+  /* Initial State (what you have now) */
+  --bs-btn-bg: var(--bs-primary-bg-subtle);
+  --bs-btn-color: var(--bs-primary-text-emphasis);
+  --bs-btn-border-color: var(--bs-primary-bg-subtle);
+
+  /* Hover State (the fix) */
+  --bs-btn-hover-bg: var(--bs-primary);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-border-color: var(--bs-primary);
+}
+
+
+/* EOF */
