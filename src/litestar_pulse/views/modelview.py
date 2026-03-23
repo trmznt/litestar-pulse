@@ -479,12 +479,12 @@ class LPModelView(LPBaseView):
         ]:
             if panel is None:
                 continue
-            if "jscode" in panel:
-                jscode.append(panel["jscode"])
-            if "pyscode" in panel:
-                pyscode.append(panel["pyscode"])
-            if "scriptlinks" in panel:
-                scriptlinks.extend(panel["scriptlinks"])
+            if "javascript_code" in panel:
+                jscode.append(panel["javascript_code"])
+            if "pyscript_code" in panel:
+                pyscode.append(panel["pyscript_code"])
+            if "scriptlink_lines" in panel:
+                scriptlinks.extend(panel["scriptlink_lines"])
 
         return dict(
             html=fragments,
