@@ -121,6 +121,8 @@ class Validator:
     strip: bool = True
     max_value: int | None = None
     min_value: int | None = None
+    list_item_type: type | None = None
+    list_separator: str = ","
     foreignkey_for: str | None = None
     text_from: str | None = None
     field_validator_class: type = _FieldValidator
@@ -150,6 +152,9 @@ class Validator:
         """
         # Allow empty values for non-required fields
         if not self.required and (value is None or value == ""):
+            return (True, "")
+
+        if self.type == list and not self.required and value in (None, "", []):
             return (True, "")
 
         if self.strip and isinstance(value, str):
@@ -183,6 +188,31 @@ class Validator:
                     return (False, "This field must be a boolean value.")
             return (True, "")
 
+        # List validation
+        if self.type == list:
+            list_value, err_msg = self._coerce_list(value)
+            if err_msg:
+                return (False, err_msg)
+
+            if self.required and len(list_value) == 0:
+                if obj is not None and getattr(obj, self._name, None):
+                    return (True, "")
+                return (False, "This field is required.")
+
+            if self.list_item_type in (int, float):
+                for item in list_value:
+                    if self.min_value is not None and item < self.min_value:
+                        return (False, f"Value must be at least {self.min_value}.")
+                    if self.max_value is not None and item > self.max_value:
+                        return (False, f"Value must be at most {self.max_value}.")
+
+            for item in list_value:
+                valid, item_err = self._validate_string_rules(item)
+                if not valid:
+                    return (False, f"Invalid list item '{item}': {item_err}")
+
+            return (True, "")
+
         # Numeric type validation
         if self.type in (int, float):
             try:
@@ -195,36 +225,22 @@ class Validator:
             if self.max_value is not None and numeric_value > self.max_value:
                 return (False, f"Value must be at most {self.max_value}.")
 
-        # String format validations
-        if self.alphanum and not str(value).isalnum():
-            return (False, "This field must be alphanumeric.")
-
-        if self.alphanumplus and not all(
-            c.isalnum() or c in "+-_." for c in str(value)
-        ):
-            return (
-                False,
-                "This field must be alphanumeric or contain '+', '-', '.', or '_'.",
-            )
-
-        if self.max_length is not None and len(str(value)) > self.max_length:
-            return (
-                False,
-                f"This field must be at most {self.max_length} characters long.",
-            )
-
-        # Use pre-compiled module-level regex patterns for performance
-        if self.uuid and not _UUID_RE.match(str(value)):
-            return (False, "This field must be a valid UUID.")
-
-        if self.email and not _EMAIL_RE.match(str(value)):
-            return (False, "This field must be a valid email address.")
+        valid, err_msg = self._validate_string_rules(value)
+        if not valid:
+            return (False, err_msg)
 
         return (True, "")
 
     def transform(self, value: Any) -> Any:
         if self.strip and isinstance(value, str):
             value = value.strip()
+
+        if self.type == list:
+            list_value, err_msg = self._coerce_list(value)
+            if err_msg:
+                raise ValueError(err_msg)
+            return list_value
+
         if self.type == bool:
             if isinstance(value, bool):
                 return value
@@ -241,6 +257,80 @@ class Validator:
         if not self.required and value == "":
             return None
         return self.type(value) if value is not None else None
+
+    def _coerce_list(self, value: Any) -> tuple[list[Any], str]:
+        """Normalize raw input to a list and coerce each item when configured."""
+
+        if value is None or value == "":
+            raw_items: list[Any] = []
+        elif isinstance(value, list):
+            raw_items = value
+        elif isinstance(value, tuple):
+            raw_items = list(value)
+        elif isinstance(value, set):
+            raw_items = list(value)
+        elif isinstance(value, str):
+            raw_items = [x for x in value.split(self.list_separator)]
+        else:
+            return ([], "This field must be a list value.")
+
+        normalized: list[Any] = []
+        item_type = self.list_item_type
+
+        for raw_item in raw_items:
+            item = (
+                raw_item.strip()
+                if self.strip and isinstance(raw_item, str)
+                else raw_item
+            )
+
+            # Ignore blank tokens from comma-separated input like "1,2,"
+            if item == "":
+                continue
+
+            if item_type is None:
+                normalized.append(item)
+                continue
+
+            try:
+                converted = item_type(item)
+            except (ValueError, TypeError):
+                return (
+                    [],
+                    f"Each item must be a valid {item_type.__name__} value.",
+                )
+            normalized.append(converted)
+
+        return (normalized, "")
+
+    def _validate_string_rules(self, value: Any) -> tuple[bool, str]:
+        """Validate alphanum/uuid/email/length rules on a single scalar value."""
+
+        str_value = str(value)
+
+        if self.alphanum and not str_value.isalnum():
+            return (False, "This field must be alphanumeric.")
+
+        if self.alphanumplus and not all(c.isalnum() or c in "+-_." for c in str_value):
+            return (
+                False,
+                "This field must be alphanumeric or contain '+', '-', '.', or '_'.",
+            )
+
+        if self.max_length is not None and len(str_value) > self.max_length:
+            return (
+                False,
+                f"This field must be at most {self.max_length} characters long.",
+            )
+
+        # Use pre-compiled module-level regex patterns for performance
+        if self.uuid and not _UUID_RE.match(str_value):
+            return (False, "This field must be a valid UUID.")
+
+        if self.email and not _EMAIL_RE.match(str_value):
+            return (False, "This field must be a valid email address.")
+
+        return (True, "")
 
 
 def String(
@@ -262,6 +352,19 @@ def Int(
     return Validator(
         type=int,
         required=required,
+        min_value=min_value,
+        max_value=max_value,
+    )
+
+
+def IntList(
+    required: bool = False, min_value: int | None = None, max_value: int | None = None
+) -> Validator:
+    """Helper function to create an Integer List Validator."""
+    return Validator(
+        type=list,
+        required=required,
+        list_item_type=int,
         min_value=min_value,
         max_value=max_value,
     )
@@ -296,6 +399,22 @@ def ForeignKeyInt(
     )
 
 
+def ForeignKeyIntCollection(
+    foreignkey_for: str,
+    text_from: str,
+    required: bool = False,
+) -> Validator:
+    """Helper function to create a Foreign Key Integer Collection Validator."""
+    return Validator(
+        type=list,
+        required=required,
+        list_item_type=int,
+        foreignkey_for=foreignkey_for,
+        text_from=text_from,
+        field_validator_class=_ForeignKeyIntFieldValidator,
+    )
+
+
 def Float(
     required: bool = False,
     min_value: float | None = None,
@@ -323,6 +442,20 @@ def Alphanum(
     )
 
 
+def AlphanumList(
+    required: bool = False, strip: bool = True, max_length: int | None = None
+) -> Validator:
+    """Helper function to create an Alphanumeric List Validator."""
+    return Validator(
+        type=list,
+        required=required,
+        list_item_type=str,
+        alphanum=True,
+        strip=strip,
+        max_length=max_length,
+    )
+
+
 def AlphanumPlus(
     required: bool = False, strip: bool = True, max_length: int | None = None
 ) -> Validator:
@@ -330,6 +463,20 @@ def AlphanumPlus(
     return Validator(
         type=str,
         required=required,
+        alphanumplus=True,
+        strip=strip,
+        max_length=max_length,
+    )
+
+
+def AlphanumPlusList(
+    required: bool = False, strip: bool = True, max_length: int | None = None
+) -> Validator:
+    """Helper function to create an AlphanumPlus List Validator."""
+    return Validator(
+        type=list,
+        required=required,
+        list_item_type=str,
         alphanumplus=True,
         strip=strip,
         max_length=max_length,
@@ -345,11 +492,32 @@ def UUID(required: bool = False) -> Validator:
     )
 
 
+def UUIDList(required: bool = False) -> Validator:
+    """Helper function to create a UUID List Validator."""
+    return Validator(
+        type=list,
+        required=required,
+        list_item_type=str,
+        uuid=True,
+    )
+
+
 def Email(required: bool = False, max_length: int = 64) -> Validator:
     """Helper function to create an Email Validator."""
     return Validator(
         type=str,
         required=required,
+        email=True,
+        max_length=max_length,
+    )
+
+
+def EmailList(required: bool = False, max_length: int = 64) -> Validator:
+    """Helper function to create an Email List Validator."""
+    return Validator(
+        type=list,
+        required=required,
+        list_item_type=str,
         email=True,
         max_length=max_length,
     )
