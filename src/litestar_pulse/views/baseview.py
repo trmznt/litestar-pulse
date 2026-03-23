@@ -24,6 +24,7 @@ from litestar.connection import ASGIConnection
 from litestar.exceptions import NotAuthorizedException
 
 from litestar_pulse.config.app import logger
+from litestar_pulse.db import set_handler
 from litestar_pulse.db.handler import handler_factory
 from litestar_pulse.lib.template import Template
 from litestar_pulse.lib import roles as r
@@ -185,6 +186,7 @@ class LPController(Controller):
 
         # database handler
         self.dbh: Any = handler_factory(self.dbt)
+        set_handler(self.dbh)
 
     def get_controller_handler_name(self) -> str:
         return self.__class__.__name__.lower().removesuffix("view")
@@ -242,7 +244,7 @@ class LPBaseView(LPController):
         self.init_view(request, db_session, transaction)
         ctx = await self.view(uuid=uuid)
         ctx.setdefault("title", Markup("Viewing ") + self.get_model_title(as_url=True))
-        return Template(template_name=self.plain_template_file, context=ctx)
+        return Template(template_name=self.form_template_file, context=ctx)
 
     @get(path="/{dbid:int}", name="view-id", guards=[LPController.viewing_role_guard])
     async def view_id_html(
@@ -261,7 +263,7 @@ class LPBaseView(LPController):
         self.init_view(request, db_session, transaction)
         ctx = await self.view(dbid=dbid)
         ctx.setdefault("title", Markup("Viewing ") + self.get_model_title(as_url=True))
-        return Template(template_name=self.plain_template_file, context=ctx)
+        return Template(template_name=self.form_template_file, context=ctx)
 
     @get(path="/{dbid:int}/edit", name="edit")
     async def edit_id_html(
