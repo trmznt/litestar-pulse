@@ -902,7 +902,7 @@ class ModelForm:
     The class provides:
     - ``validate()`` — validates submitted data against all declared fields
     - ``update()`` — applies validated data to the database object
-    - ``validate_and_update()`` — combines both with optimistic concurrency via timestamps
+    - ``transform_and_update()`` — combines both with optimistic concurrency via timestamps
     - ``html_form()`` — renders a complete HTML form with error display
     """
 
@@ -1013,6 +1013,7 @@ class ModelForm:
             result, err_msg = field_validator.validate(value, obj=obj)
             if not result:
                 error_list.append((f"Invalid {field_name}: {err_msg}", field_name))
+                continue
 
             transformed_value = field_validator.transform(value)
             transformed_data[field_name] = transformed_value
