@@ -470,13 +470,18 @@ class EnumKeyRegistry:
         return list(cls._values_by_key[category_key].keys())
 
     @classmethod
-    def get_all_items(cls, category_key: str) -> list[EnumKeyValue]:
+    def get_all_values(cls, category_key: str) -> list[EnumKeyValue]:
         """Return all cached values for a given category."""
         if category_key not in cls._values_by_key:
             raise EnumKeyCategoryNotLoaded(
                 f"Category {category_key!r} has not been loaded into the registry"
             )
-        items = cls._values_by_key[category_key].values()
+        return list(cls._values_by_key[category_key].values())
+
+    @classmethod
+    def get_all_items(cls, category_key: str) -> list[EnumKeyValue]:
+        """Return all cached values for a given category."""
+        items = cls.get_all_values(category_key)
         item_list = [(item.id, item.key) for item in items]
         return sorted(item_list, key=lambda x: x[1])
 
