@@ -334,6 +334,7 @@ class Group(IdentityUUIDv7UserAuditBase, RoleMixin):
         # primaryjoin=lambda: Group.id == groups_roles.c.group_id,
         # secondaryjoin=lambda: EnumKey.id == groups_roles.c.role_id,
         order_by=lambda: EnumKey.key,
+        lazy="selectin",
     )
 
     primaryusers: Mapped[list[User]] = relationship(
