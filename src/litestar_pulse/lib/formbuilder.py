@@ -7,6 +7,8 @@ __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
 
+import json
+
 from typing import Any, Self, Callable, Awaitable
 from dataclasses import dataclass
 from functools import cached_property
@@ -184,7 +186,44 @@ class _EnumKeyInputFieldProxy(_InputFieldProxy):
             )
         category_key = enumproxy.category_key
         enumkey_registry = enumproxy.__registry__
-        return enumkey_registry.get_all_items(category_key)
+        return EnumKeyRegistry.get_all_items(category_key)
+
+
+class _EnumKeyCollectionFieldProxy(_EnumKeyInputFieldProxy):
+    """Proxy for EnumKeyCollectionField — resolves value from the in-memory EnumKeyRegistry."""
+
+    def get_value(self) -> list[tuple[int, str]]:
+        obj = getattr(self.owner_instance, "obj", None)
+        data = getattr(self.owner_instance, "data")
+        values = []
+        if self.name in data:
+            raw_values = data[self.name]
+            if isinstance(raw_values, str):
+                raw_values = [v.strip() for v in raw_values.split(",") if v.strip()]
+            for raw_value in raw_values:
+                value = int(raw_value)
+                ekey = EnumKeyRegistry.get_by_id(None, value)
+                values.append((value, ekey.key))
+            return values
+
+        if obj is not None:
+            related_objs = getattr(obj, self.name, [])
+            for related_obj in related_objs:
+                value = getattr(related_obj, "id", None)
+                text = getattr(related_obj, self.input_field.text_from, "")
+                values.append((value, text))
+            return values
+        return []
+
+    def get_options(self) -> list[tuple[int, str]]:
+        obj = getattr(self.owner_instance, "obj", None)
+        if obj is None:
+            raise RuntimeError("Owner instance does not have an 'obj' attribute")
+        category_key = self.input_field.category_key
+        if category_key is None:
+            raise RuntimeError("Validator does not have 'category_key' set")
+
+        return EnumKeyRegistry.get_all_items(category_key)
 
 
 class _DBEnumKeyInputFieldProxy(_InputFieldProxy):
@@ -565,6 +604,36 @@ class EnumKeyField(InputField):
         )
 
 
+class EnumKeyCollectionField(InputField):
+    """Multiple select for SQLAlchemy collection relationship with EnumKey items."""
+
+    def __init__(
+        self,
+        label: str,
+        category_key: str,
+        required: bool = False,
+        foreignkey_for: str | None = None,
+        validator: v.Validator = v.IntList,
+        forminput: f.FormField = lambda **kwargs: f.SelectInput(
+            multiple=True, **kwargs
+        ),
+        **kwargs: Any,
+    ) -> None:
+        _validator = validator(
+            required=required,
+            **kwargs,
+        )
+        super().__init__(
+            label=label,
+            validator=_validator,
+            forminput=forminput,
+            foreignkey_for=foreignkey_for,
+            text_from="key",
+            proxy_class=_EnumKeyCollectionFieldProxy,
+        )
+        self.category_key = category_key
+
+
 class DBEnumKeyField(InputField):
     """Select input for database-backed EnumKey foreign keys."""
 
@@ -617,6 +686,166 @@ class CheckboxField(InputField):
             **kwargs,
         )
         super().__init__(label=label, validator=_validator, forminput=forminput)
+
+
+class TomSelectField(InputField):
+    """Select input rendered with TomSelect for enhanced UX."""
+
+    def __init__(
+        self,
+        label: str,
+        required: bool = False,
+        options: list[tuple[Any, str]] | None = None,
+        option_callback: Any | None = None,
+        validator: v.Validator = v.String,
+        options_async_callback: (
+            Callable[[Any], Callable[[], Awaitable[list[tuple[Any, str]]]]] | None
+        ) = None,
+        forminput: f.FormField = lambda **kwargs: f.SelectInput(
+            always_show_input=True, **kwargs
+        ),
+        tom_select_options: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            label=label,
+            required=required,
+            options=options,
+            option_callback=option_callback,
+            validator=validator,
+            options_async_callback=options_async_callback,
+            forminput=forminput,
+            **kwargs,
+        )
+        self.tom_select_options = tom_select_options or {}
+
+    async def async_prerender(
+        self, controller: Any = None, field_proxy: _InputFieldProxy | None = None
+    ) -> None:
+        """Fetch options and register TomSelect init code for this field."""
+        await super().async_prerender(controller=controller, field_proxy=field_proxy)
+
+        if field_proxy is None:
+            return
+
+        field_name = field_proxy.get_name()
+        form_instance = field_proxy.owner_instance
+
+        tom_options = {
+            "create": False,
+            "persist": False,
+            "allowEmptyOption": True,
+        }
+        tom_options.update(self.tom_select_options)
+
+        escaped_field_name = field_name.replace("\\", "\\\\").replace("'", "\\'")
+        options_json = json.dumps(tom_options, ensure_ascii=True)
+
+        form_instance.jscode.append(
+            """
+(function() {
+    if (typeof TomSelect === 'undefined') {
+        return;
+    }
+    var selector = "select[name='"""
+            + escaped_field_name
+            + """']";
+    var element = document.querySelector(selector);
+    if (!element || element.tomselect) {
+        return;
+    }
+    new TomSelect(element, """
+            + options_json
+            + """);
+})();
+""".strip()
+        )
+
+
+class TomSelectEnumKeyCollectionField(InputField):
+    """
+    Multiple select with TomSelect for EnumKey collection relationships.
+    Note need to changes the div class for read-only to:
+        "ts-wrapper multi has-items"
+    for proper styling with bootstrap 5.3
+    """
+
+    class _bs53_override_theme(f.Bootstrap53Theme):
+
+        def select_class(self, *, error: bool = False) -> str:
+            base = ""
+            return f"{base} is-invalid" if error else base
+
+    def __init__(
+        self,
+        label: str,
+        category_key: str,
+        required: bool = False,
+        validator: v.Validator = v.IntList,
+        forminput: f.FormField = lambda override_theme=_bs53_override_theme, **kwargs: f.SelectInput(
+            multiple=True,
+            always_show_input=True,
+            override_theme=override_theme(),
+            **kwargs,
+        ),
+        tom_select_options: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        _validator = validator(
+            required=required,
+            **kwargs,
+        )
+        super().__init__(
+            label=label,
+            required=required,
+            validator=_validator,
+            forminput=forminput,
+            text_from="key",
+            proxy_class=_EnumKeyCollectionFieldProxy,
+        )
+        self.category_key = category_key
+        self.tom_select_options = tom_select_options or {}
+
+    async def async_prerender(
+        self, controller: Any = None, field_proxy: _InputFieldProxy | None = None
+    ) -> None:
+        """Register TomSelect init code for multiple EnumKey selection."""
+        if field_proxy is None:
+            return
+
+        field_name = field_proxy.get_name()
+        form_instance = field_proxy.owner_instance
+
+        tom_options = {
+            "create": False,
+            "persist": False,
+            "allowEmptyOption": True,
+            "maxItems": None,  # allow unlimited selections for collection
+        }
+        tom_options.update(self.tom_select_options)
+
+        escaped_field_name = field_name.replace("\\", "\\\\").replace("'", "\\'")
+        options_json = json.dumps(tom_options, ensure_ascii=True)
+
+        form_instance.jscode.append(
+            """
+(function() {
+    if (typeof TomSelect === 'undefined') {
+        return;
+    }
+    var selector = "select[name='"""
+            + escaped_field_name
+            + """']";
+    var element = document.querySelector(selector);
+    if (!element || element.tomselect) {
+        return;
+    }
+    new TomSelect(element, """
+            + options_json
+            + """);
+})();
+""".strip()
+        )
 
 
 # ------------------
@@ -720,8 +949,13 @@ class ModelForm:
         for field_name in self.__fields__:
             if not hasattr(self, field_name):
                 continue
-            field_validator: v.Validator = getattr(self, field_name)
+            field_validator = getattr(self, field_name)
             value = data.get(field_name, None)
+
+            validator = field_validator.input_field.validator
+            if validator.type == list and hasattr(data, "getall"):
+                value = data.getall(field_name, [])
+
             result, err_msg = field_validator.validate(value, obj=obj)
             if not result:
                 error_list.append((f"Invalid {field_name}: {err_msg}", field_name))
@@ -749,8 +983,13 @@ class ModelForm:
                 continue
             if field_name not in data:
                 continue
-            field_validator: v.Validator = getattr(self, field_name)
+            field_validator = getattr(self, field_name)
             value = data.get(field_name)
+
+            validator = field_validator.input_field.validator
+            if validator.type == list and hasattr(data, "getall"):
+                value = data.getall(field_name, [])
+
             result, err_msg = field_validator.validate(value, obj=obj)
             if not result:
                 error_list.append((f"Invalid {field_name}: {err_msg}", field_name))
@@ -939,9 +1178,27 @@ class ModelForm:
                 t.hr,
                 form,
             ],
-            jscode="\n".join(self.jscode),
-            pyscode="\n".join(self.pyscode),
+            javascript_code="\n".join(self.jscode),
+            pyscript_code="\n".join(self.pyscode),
+            scriptlink_lines="\n".join(self.scriptlinks),
+        )
+
+        return dict(
+            html=t.fragment()[
+                self.header(),
+                t.hr,
+                form,
+            ],
+            javascript_code="\n".join(self.jscode),
+            pyscript_code="\n".join(self.pyscode),
             scriptlinks="\n".join(self.scriptlinks),
+        )
+
+        return dict(
+            html=fragments,
+            javascript_code="\n".join(jscode),
+            pyscript_code="\n".join(pyscode),
+            scriptlink_lines="\n".join(scriptlinks),
         )
 
     def header(self) -> t.htmltag:
