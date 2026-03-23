@@ -23,7 +23,7 @@ from litestar.plugins.sqlalchemy import SQLAlchemyDTO
 
 # from litestar_pulse.lib.sqlalchemy_imports import SQLAlchemyDTO
 
-from . import set_handler_class, handler_factory
+from . import set_handler_class, handler_factory, get_handler
 from .models.meta import LPAsyncSession
 from .models import account, enumkey  # noqa: F401
 
@@ -147,6 +147,34 @@ class UserDomainService(LPBaseService[account.UserDomain]):
 class GroupService(LPBaseService[account.Group]):
     model_type = account.Group
     repository_type = GroupRepo
+
+    async def before_update_from_dict(
+        self, instance: account.Group, data: dict
+    ) -> None:
+        """
+        Perform the following before updating a Group instance from a dict:
+        - convert the "roles" key from a list of integer primary key ids to the EnumKey
+          instances
+        """
+
+        if "roles" in data:
+            role_ids = data["roles"]
+            # Convert role IDs to EnumKey instances
+            roles = []
+
+            # check that all role IDs are under ROLES category
+            enumkeys = enumkey.EnumKeyRegistry.get_all_items("@ROLES")
+            valid_role_ids = {ek[0] for ek in enumkeys}
+            if any(role_id_diff := set(role_ids) - valid_role_ids):
+                raise ValueError(
+                    f"One or more invalid role IDs provided: {role_id_diff}"
+                )
+
+            roles = await get_handler().repo.EnumKey.list(
+                enumkey.EnumKey.id.in_(role_ids)
+            )
+
+            data["roles"] = roles
 
 
 class UserService(LPBaseService[account.User]):
