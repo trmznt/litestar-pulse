@@ -15,8 +15,10 @@
 
   ${self.stylelinks()}
 
+    <link href="/static/css/fixer.css" rel="stylesheet">
+
   </head>
-  <body>
+  <body id="body-layout">
 
     <!-- Static navbar -->
     <nav class="navbar navbar-expand-md navbar-dark bg-dark mb-4">
