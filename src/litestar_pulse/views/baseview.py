@@ -200,6 +200,25 @@ class LPBaseView(LPController):
     plain_template_file = "lp/generics/page.mako"
     form_template_file = "lp/generics/formpage.mako"
 
+    @staticmethod
+    def normalize_form_data(form_data: Any) -> dict[str, Any]:
+        """Convert request form data to dict while preserving repeated keys as lists."""
+        if hasattr(form_data, "multi_items"):
+            data: dict[str, Any] = {}
+            for key, value in form_data.multi_items():
+                if key in data:
+                    existing = data[key]
+                    if isinstance(existing, list):
+                        existing.append(value)
+                    else:
+                        data[key] = [existing, value]
+                else:
+                    data[key] = value
+            return data
+        if hasattr(form_data, "items"):
+            return dict(form_data.items())
+        return dict(form_data)
+
     async def index(self) -> dict[str, t.Tag | str]:
         """
         Render index page
@@ -329,12 +348,7 @@ class LPBaseView(LPController):
         )
         self.init_view(request, db_session, transaction)
         form_data = await request.form()
-        if hasattr(form_data, "multi_items"):
-            data = dict(form_data.multi_items())
-        elif hasattr(form_data, "items"):
-            data = dict(form_data.items())
-        else:
-            data = dict(form_data)
+        data = self.normalize_form_data(form_data)
 
         response = await self.update(dbid=dbid, data=data)
 
