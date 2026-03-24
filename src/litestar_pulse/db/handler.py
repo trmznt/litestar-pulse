@@ -117,12 +117,15 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
         if not object_session(instance):
             raise ValueError("Instance must be attached to a session before updating")
 
-        # preprocess data before updating instance attributes
-        await self.before_update_from_dict(instance, data)
+        # Prevent query-invoked autoflush while hooks may issue SELECTs
+        # before required attributes are assigned on new/pending instances.
+        with self.repository.session.no_autoflush:
+            # preprocess data before updating instance attributes
+            await self.before_update_from_dict(instance, data)
 
-        # update instance attributes from data dict
-        for key, value in data.items():
-            setattr(instance, key, value)
+            # update instance attributes from data dict
+            for key, value in data.items():
+                setattr(instance, key, value)
 
         state = inspect(instance)
         if state.pending or state.transient:
