@@ -57,6 +57,11 @@ class UUIDv7UniqueKey(SentinelMixin):
     uuid: Mapped[UUID] = mapped_column(default=uuid7, unique=True, sort_order=-100)
     """UUID unique key column."""
 
+    def __init__(self, **kwargs: any) -> None:
+        # Ensure uuid exists before SQLAlchemy starts its work
+        kwargs.setdefault("uuid", uuid7())
+        super().__init__(**kwargs)
+
 
 @declarative_mixin
 class NanoidUniqueKey(SentinelMixin):
@@ -178,7 +183,7 @@ class RoleMixin:
 
 @declarative_mixin
 class IdentityUUIDv7UserAuditBase(
-    IdentityAuditBase, UUIDv7UniqueKey, UpdatedByColumn, HelperMethodMixin
+    UUIDv7UniqueKey, IdentityAuditBase, UpdatedByColumn, HelperMethodMixin
 ):
     __abstract__ = True
 
