@@ -75,7 +75,7 @@ class custom_submit_bar(t.singletag):
             assert type(b) == tuple or type(b) == list
             buttons.add(
                 t.button(
-                    class_="btn bg-primary-subtle text-primary-emphasis",
+                    class_="btn btn-subtle-primary",
                     type="submit",
                     name="_method",
                     id="_method.%s" % b[1],
@@ -202,88 +202,26 @@ class selection_bar(object):
 # text templates
 
 SELECTION_BAR_JS_TEMPLATE = """\
-(() => {{
-    const prefix = "{prefix}";
-    const init = () => {{
-        const form = document.getElementById("{form_id}");
-        if (!form) return;
-        const modal = document.getElementById(`${{prefix}}-modal`);
-        const checkboxSelector = 'input[name="{prefix}"]';
-
-        const bind = (suffix, handler) => {{
-            const node = document.getElementById(`${{prefix}}-${{suffix}}`);
-            if (node) {{
-                node.addEventListener('click', handler);
-            }}
-        }};
-
-        const allBoxes = () => Array.from(form.querySelectorAll(checkboxSelector));
-
-        bind('select-all', () => allBoxes().forEach(cb => (cb.checked = true)));
-        bind('select-none', () => allBoxes().forEach(cb => (cb.checked = false)));
-        bind('select-inverse', () => allBoxes().forEach(cb => (cb.checked = !cb.checked)));
-
-        const handleSubmitAction = async event => {{
-            event.preventDefault();
-            const button = event.currentTarget;
-            try {{
-                const formData = new FormData(form);
-                if (button.name) {{
-                    formData.set(button.name, button.value ?? '');
-                }}
-
-                const params = new URLSearchParams();
-                formData.forEach((value, key) => {{
-                    if (value instanceof File) {{
-                        return;
-                    }}
-                    params.append(key, value);
-                }});
-
-                const response = await fetch(form.action, {{
-                    method: form.method || 'POST',
-                    headers: {{
-                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }},
-                    body: params
-                }});
-
-                const text = await response.text();
-                const target = modal || document;
-                if (modal) {{
-                    modal.innerHTML = text;
-                    if (window.bootstrap && window.bootstrap.Modal) {{
-                        window.bootstrap.Modal.getOrCreateInstance(modal).show();
-                    }} else {{
-                        modal.classList.add('show');
-                        modal.style.display = 'block';
-                    }}
-                }}
-                target.dispatchEvent(
-                    new CustomEvent('selection-bar:loaded', {{ detail: {{ prefix, html: text }} }})
-                );
-            }} catch (error) {{
-                console.error('Selection bar request failed', error);
-            }}
-        }};
-
-        form
-            .querySelectorAll(`[id^="${{prefix}}-submit-"]`)
-            .forEach(node => node.addEventListener('click', handleSubmitAction));
-    }};
-
-    if (document.readyState === 'loading') {{
-        document.addEventListener('DOMContentLoaded', init, {{ once: true }});
-    }} else {{
-        init();
-    }}
-}})();
+initSelectionBar("{form_id}", "{prefix}", "{checkbox_name}");
 """
 
 
-def selection_bar_js(*, form_id: str, prefix: str) -> str:
-    return SELECTION_BAR_JS_TEMPLATE.format(form_id=form_id, prefix=prefix)
+def selection_bar_js(*, form_id: str, prefix: str, checkbox_name: str = None) -> str:
+    """
+    Generate initialization JavaScript for selection bar functionality.
+
+    Args:
+        form_id: HTML id of the form containing the checkboxes
+        prefix: Prefix for button element IDs
+        checkbox_name: Name attribute of checkbox inputs (defaults to prefix)
+
+    Returns:
+        JavaScript code that initializes selection bar behavior
+    """
+    checkbox_name = checkbox_name or prefix
+    return SELECTION_BAR_JS_TEMPLATE.format(
+        form_id=form_id, prefix=prefix, checkbox_name=checkbox_name
+    )
 
 
 # EOF

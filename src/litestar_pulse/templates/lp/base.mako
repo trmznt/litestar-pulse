@@ -61,46 +61,18 @@
 <%def name="scriptlinks()">
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
     ## <!-- <script src="${request.static_url('rhombus:static/js/jquery.ocupload-min.js')}"></script> -->
-    ${self.anyscriptlinks()}
-    <script type="text/javascript">
-        //<![CDATA[
-        ${self.jscode()}
-
-
-(function() {
-    document.querySelectorAll('time[datetime]').forEach(function(el) {
-      var date = new Date(el.getAttribute('datetime'));
-      if (isNaN(date.getTime())) return;
-
-      // Manually define components to avoid "Invalid option" conflict
-      var options = {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: false,
-        timeZoneName: 'short'
-      };
-
-      // Using en-CA for the date part (YYYY-MM-DD)
-      var datePart = new Intl.DateTimeFormat('en-CA', {
-        year: 'numeric', month: '2-digit', day: '2-digit'
-      }).format(date);
-
-      // Using en-US for the time part with timezone
-      var timePart = new Intl.DateTimeFormat('en-US', {
-        hour: 'numeric', minute: '2-digit', hour12: false, timeZoneName: 'short'
-      }).format(date);
-
-      el.textContent = datePart + " " + timePart;
-    });
-  })();
-
-        //]]>
-    </script>
-
 <script src="//unpkg.com/alpinejs" defer></script>
+<script src="/static/js/genutils.js"><</script>
+
+${self.anyscriptlinks()}
+
+<script type="text/javascript">
+//<![CDATA[
+
+${self.jscode()}
+
+//]]>
+</script>
 
 </%def>
 ##
