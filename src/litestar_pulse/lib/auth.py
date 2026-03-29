@@ -12,6 +12,7 @@ import os
 import pickle
 from dataclasses import dataclass
 from datetime import timedelta
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 import msgspec
@@ -38,6 +39,13 @@ if TYPE_CHECKING:
     from litestar_pulse.db.models.account import User, UserInstance
 
 
+IDLE_TIMEOUT_SECONDS = 60 * 60 * 6  # 6 hours of inactivity before session expires
+
+
+def _utc_now_ts() -> int:
+    return int(datetime.now(timezone.utc).timestamp())
+
+
 class LPSessionAuthMiddleware(SessionAuthMiddleware):
     async def authenticate_request(
         self, connection: ASGIConnection
@@ -49,8 +57,33 @@ class LPSessionAuthMiddleware(SessionAuthMiddleware):
         if "session" not in connection.scope or not connection.scope["session"]:
             return AuthenticationResult(user=None, auth=None)
 
+        session = connection.scope["session"]
+
+        # Enforce idle timeout for authenticated sessions.
+        if session.get("user") is not None:
+            now_ts = _utc_now_ts()
+            last_activity = session.get("last_activity")
+            try:
+                last_activity_ts = (
+                    int(last_activity) if last_activity is not None else None
+                )
+            except (TypeError, ValueError):
+                last_activity_ts = None
+
+            if (
+                last_activity_ts is not None
+                and now_ts - last_activity_ts > IDLE_TIMEOUT_SECONDS
+            ):
+                logger.info("Session expired due to inactivity > 1 hour")
+                session.pop("user", None)
+                session.pop("last_activity", None)
+                set_current_userid(None)
+                return AuthenticationResult(user=None, auth=None)
+
         try:
             auth_result = await super().authenticate_request(connection)
+            if auth_result.user is not None:
+                session["last_activity"] = _utc_now_ts()
             set_current_userid(getattr(auth_result.user, "id", None))
             return auth_result
         except NotAuthorizedException:
@@ -106,12 +139,18 @@ def is_admin(connection: ASGIConnection, route_handler: BaseRouteHandler) -> Non
 
 async def log_user_in(user: User, plain_password: str, request: ASGIConnection) -> bool:
     """
-    Verify a user's password against the stored hashed password.
+    Verify a user's password against the stored hashed password and, if valid,
+    set the user information in the session together with last activity timestamp.
     """
 
     if await verify_password(plain_password, user.credential):
         # set user info in web session
-        request.set_session({"user": await user.user_instance()})
+        request.set_session(
+            {
+                "user": await user.user_instance(),
+                "last_activity": _utc_now_ts(),
+            }
+        )
         return True
     return False
 
