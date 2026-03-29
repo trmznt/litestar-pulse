@@ -161,11 +161,12 @@ class LPController(Controller):
 
                 # 2. Re-assign the name using the required pattern
                 handler.name = f"{class_name}-{base_name}"
-                logger.info(
-                    "Registered handler %s with paths %s",
-                    handler.name,
-                    handler.paths or [self.path or "/"],
-                )
+                if False:
+                    logger.info(
+                        "Registered handler %s with paths %s",
+                        handler.name,
+                        handler.paths or [self.path or "/"],
+                    )
 
         return handlers
 
@@ -471,6 +472,32 @@ class LPBaseView(LPController):
     async def lookup(self) -> Any:
         """
         Render lookup page
+        """
+        raise NotImplementedError
+
+    @get(path="/{dbid:int}/attachment", name="attachment")
+    async def attachment_html(
+        self,
+        dbid: int,
+        request: Request,
+        db_session: AsyncSession,
+        transaction: AsyncSession,
+    ) -> Response[str] | Template:
+        """
+        Render attachment page
+        """
+        request.logger.info(
+            "Rendering attachment page for %s with dbid %d",
+            self.__class__.__name__,
+            dbid,
+        )
+        self.init_view(request, db_session, transaction)
+        content = await self.attachment(dbid=dbid)
+        return Response(content=str(content), media_type="text/html")
+
+    async def attachment(self, dbid: int | None = None) -> Any:
+        """
+        Render attachment page
         """
         raise NotImplementedError
 

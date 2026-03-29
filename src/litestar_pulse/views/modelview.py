@@ -118,6 +118,30 @@ class LPModelView(LPBaseView):
             "_method argument is not recognized: %s" % data.get("_method", "None")
         )
 
+    def get_attachment_url(
+        self,
+        instance: Any,
+    ) -> t.Tag | None:
+        """
+        Get the file URL for the given instance and field, if any.
+        This method can be overridden in derived classes to provide the correct URL for the file field.
+        By default, it returns None, which means no file URL will be provided to the FileUploadField.
+        """
+        file_object = getattr(instance, "attachment", None)
+        if file_object:
+            return t.a(
+                href=self.req.url_for(
+                    f"{self.model_type.__name__.lower()}-attachment", dbid=instance.id
+                )
+            )[
+                (
+                    file_object.metadata.get("filename")
+                    if file_object.metadata
+                    else "No original filename"
+                )
+            ]
+        return None
+
     # main methods
 
     def get_repository(self) -> Any:
@@ -183,6 +207,8 @@ class LPModelView(LPBaseView):
         """
 
         instance = await self.get_model_instance(dbid=dbid, uuid=uuid)
+        if hasattr(instance, "attachment"):
+            print(instance.attachment)
 
         if instance is None:
             return dict(html="Instance not found", __status_code__=404)
@@ -200,19 +226,6 @@ class LPModelView(LPBaseView):
         )
 
         return ctx
-
-        return await form.html_form(
-            request=self.req,
-            readonly=True,
-            editable=True,
-            controller=self,
-        )
-
-        return self.set_layout(
-            main_panel=self.main_panel(instance),
-        )
-
-        #
 
     async def edit(
         self, dbid: int | None = None, uuid: str | None = None
@@ -481,6 +494,8 @@ class LPModelView(LPBaseView):
                 continue
             if "javascript_code" in panel:
                 jscode.append(panel["javascript_code"])
+            if "jscode" in panel:
+                jscode.append(panel["jscode"])
             if "pyscript_code" in panel:
                 pyscode.append(panel["pyscript_code"])
             if "scriptlink_lines" in panel:
