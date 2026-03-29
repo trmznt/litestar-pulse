@@ -10,13 +10,18 @@ __license__ = "MPL-2.0"
 
 import types
 import yaml
-from typing import Awaitable, TypeVar
+from pathlib import Path
+from collections.abc import Awaitable
+from typing import Any, Awaitable, TypeVar
+
+import fastnanoid
 
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import DeclarativeBase, undefer, joinedload, object_session
 
 from advanced_alchemy.repository import SQLAlchemyAsyncRepository
 from advanced_alchemy.service import SQLAlchemyAsyncRepositoryService
+from advanced_alchemy.types.file_object import FileObject
 
 from litestar.dto import DTOConfig
 from litestar.plugins.sqlalchemy import SQLAlchemyDTO
@@ -25,7 +30,7 @@ from litestar.plugins.sqlalchemy import SQLAlchemyDTO
 
 from . import set_handler_class, handler_factory, get_handler
 from .models.meta import LPAsyncSession
-from .models import account, enumkey  # noqa: F401
+from .models import account, enumkey, fileobjects  # noqa: F401
 
 import lazy_object_proxy as lop
 
@@ -99,6 +104,21 @@ class UserGroupRepo(SQLAlchemyAsyncRepository[account.UserGroup]):
     model_type = account.UserGroup
 
 
+class FileAttachmentRepo(SQLAlchemyAsyncRepository[fileobjects.FileAttachment]):
+    model_type = fileobjects.FileAttachment
+
+
+class FileObjectRepo(SQLAlchemyAsyncRepository[fileobjects.FileObject]):
+    model_type = fileobjects.FileObject
+
+    async def get_all_for_options(self) -> Awaitable[list[tuple[int, str]]]:
+        stmt = select(fileobjects.FileObject.id, fileobjects.FileObject.path).order_by(
+            fileobjects.FileObject.path
+        )
+        result = await self.session.execute(stmt)
+        return result.all()
+
+
 # services
 
 T = TypeVar("T")
@@ -136,6 +156,72 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
 
         return instance
 
+    # generic file upload handling methods that can be used by inherited services
+
+    def generate_storage_path(self, uuid: str) -> str:
+        # generate a file path for the given uuid using the first 2 characters as subdirectories
+        class_name = self.repository.model_type.__name__.lower()
+        return (
+            f"{class_name}/{uuid[-2:]}/{uuid[2:4]}/{uuid}/{fastnanoid.generate(size=8)}"
+        )
+
+    async def create_file_object(self, uploaded_file: Any, uuid: str) -> FileObject:
+        # create a FileObject from the given uploaded file
+        uuid = str(uuid)
+        if (
+            isinstance(uploaded_file.file.name, str)
+            and Path(uploaded_file.file.name).exists()
+        ):
+            file_object = FileObject(
+                backend="lp_storage",
+                filename=self.generate_storage_path(uuid),
+                metadata=dict(
+                    filename=uploaded_file.filename,
+                    content_type=uploaded_file.content_type,
+                ),
+                source_path=uploaded_file.file.name,
+            )
+        else:
+            content = uploaded_file.file.read()
+            file_object = FileObject(
+                backend="lp_storage",
+                filename=self.generate_storage_path(uuid),
+                metadata=dict(
+                    filename=uploaded_file.filename,
+                    content_type=uploaded_file.content_type,
+                    source_path=uploaded_file.file.name,
+                ),
+                content=content,
+            )
+        await file_object.save_async()
+        return file_object
+
+    async def set_file_object(
+        self, instance: Any, attr_name: str, data: dict[str, Any]
+    ) -> None:
+        # set the file attachment on the instance, ensuring the relationship is properly tracked for cleanup
+
+        if attr_name in data:
+            # Ensure the previous value is loaded so SQLAlchemy tracks it in
+            # `history.deleted` when attachment is replaced/cleared. The
+            # FileObject listener relies on that history for auto-cleanup.
+            old_attachment = getattr(instance, attr_name, None)
+
+            file_attachment = data[attr_name]
+            if file_attachment:
+                data[attr_name] = await self.create_file_object(
+                    file_attachment, instance.uuid
+                )
+            else:
+                data[attr_name] = None
+
+            new_attachment = data[attr_name]
+            if old_attachment is not None and old_attachment is not new_attachment:
+                pending = self.repository.session.info.setdefault(
+                    "_lp_pending_file_deletes", []
+                )
+                pending.append(old_attachment)
+
 
 class EnumKeyService(LPBaseService[enumkey.EnumKey]):
     model_type = enumkey.EnumKey
@@ -145,6 +231,13 @@ class EnumKeyService(LPBaseService[enumkey.EnumKey]):
 class UserDomainService(LPBaseService[account.UserDomain]):
     model_type = account.UserDomain
     repository_type = UserDomainRepo
+
+    async def before_update_from_dict(
+        self, instance: account.UserDomain, data: dict
+    ) -> None:
+
+        if "attachment" in data:
+            await self.set_file_object(instance, "attachment", data)
 
 
 class GroupService(LPBaseService[account.Group]):
@@ -198,6 +291,21 @@ class UserService(LPBaseService[account.User]):
                         account.UserGroup(group_id=primarygroup_id, role="M")
                     )
 
+        if "attachment" in data:
+            file_attachment = data["attachment"]
+            if file_attachment:
+                data["attachment"] = await self.create_file_object(file_attachment)
+
+
+class FileAttachmentService(LPBaseService[fileobjects.FileAttachment]):
+    model_type = fileobjects.FileAttachment
+    repository_type = FileAttachmentRepo
+
+
+class FileObjectService(LPBaseService[fileobjects.FileObject]):
+    model_type = fileobjects.FileObject
+    repository_type = FileObjectRepo
+
 
 class UserDTO(SQLAlchemyDTO[account.User]):
     """Data Transfer Object for User model"""
@@ -216,6 +324,8 @@ class Model(types.SimpleNamespace):
     UserDomain = account.UserDomain
     UserGroup = account.UserGroup
     User = account.User
+    FileAttachment = fileobjects.FileAttachment
+    FileObject = fileobjects.FileObject
 
 
 class Function(types.SimpleNamespace):
@@ -250,6 +360,10 @@ class LPHandler:
         self.repo.UserDomain = lop.Proxy(lambda: UserDomainRepo(session=self.session))
         self.repo.User = lop.Proxy(lambda: UserRepo(session=self.session))
         self.repo.UserGroup = lop.Proxy(lambda: UserGroupRepo(session=self.session))
+        self.repo.FileAttachment = lop.Proxy(
+            lambda: FileAttachmentRepo(session=self.session)
+        )
+        self.repo.FileObject = lop.Proxy(lambda: FileObjectRepo(session=self.session))
 
         # prepare all AsyncServices here, which will be specific for
         # each handler instance
@@ -272,6 +386,16 @@ class LPHandler:
         self.service.User = lop.Proxy(
             lambda: UserService(
                 session=self.session, repository=self.repo.User.__wrapped__
+            )
+        )
+        self.service.FileAttachment = lop.Proxy(
+            lambda: FileAttachmentService(
+                session=self.session, repository=self.repo.FileAttachment.__wrapped__
+            )
+        )
+        self.service.FileObject = lop.Proxy(
+            lambda: FileObjectService(
+                session=self.session, repository=self.repo.FileObject.__wrapped__
             )
         )
 

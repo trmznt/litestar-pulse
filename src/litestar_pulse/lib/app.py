@@ -16,6 +16,8 @@ import ipdb
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from advanced_alchemy.extensions.litestar import SQLAlchemyPlugin
+
 from litestar import Litestar
 from litestar.middleware import DefineMiddleware
 from litestar.exceptions import ClientException, NotFoundException
@@ -36,7 +38,8 @@ from litestar.static_files import create_static_files_router
 
 from debug_toolbar.litestar import DebugToolbarPlugin, LitestarDebugToolbarConfig
 
-from litestar_pulse.config.db import DBConfig
+# from litestar_pulse.config.db import DBConfig
+from litestar_pulse.config.db_aa import alchemy_config
 from litestar_pulse.config.app import (
     logging_config,
     session_config,
@@ -44,6 +47,7 @@ from litestar_pulse.config.app import (
     flash_config,
     logger,
 )
+from litestar_pulse.config.filestorage import init_filestorage
 from litestar_pulse.db.models import account
 from litestar_pulse.db.models.enumkey import EnumKeyRegistry
 from litestar_pulse.lib.debugger import SelectiveDebugger
@@ -57,15 +61,42 @@ from litestar_pulse.lib.template import context_injector
 async def provide_transaction(
     db_session: AsyncSession,
 ) -> AsyncGenerator[AsyncSession, None]:
+    session_info = db_session.sync_session.info
     try:
         async with db_session.begin():
             await EnumKeyRegistry.ensure_current(db_session)
             yield db_session
+
+        pending_deletes = session_info.pop("_lp_pending_file_deletes", [])
+        if pending_deletes:
+            logger.debug(
+                "Post-commit attachment cleanup queue size: %d",
+                len(pending_deletes),
+            )
+        for file_object in pending_deletes:
+            try:
+                logger.debug(
+                    "Post-commit deleting attachment file: %s",
+                    getattr(file_object, "path", file_object),
+                )
+                await file_object.delete_async()
+            except FileNotFoundError:
+                # Accept already-deleted files (listener/backends may have deleted first).
+                pass
+            except Exception:
+                logger.exception(
+                    "Post-commit attachment cleanup failed for %s",
+                    getattr(file_object, "path", file_object),
+                )
     except IntegrityError as exc:
+        session_info.pop("_lp_pending_file_deletes", None)
         raise ClientException(
             status_code=HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
+    except Exception:
+        session_info.pop("_lp_pending_file_deletes", None)
+        raise
 
 
 toolbar_config = LitestarDebugToolbarConfig(
@@ -84,16 +115,22 @@ def init_app() -> Litestar:
     from litestar_pulse.views.userdomain import UserDomainView
     from litestar_pulse.views.user import UserView
     from litestar_pulse.views.group import GroupView
+    from litestar_pulse.views.fileobjects import FileAttachmentView, FileObjectView
     from litestar_pulse.views.api_v1 import API_v1
 
-    dbc = DBConfig()
-    dbplugin = SQLAlchemyInitPlugin(
-        config=SQLAlchemyAsyncConfig(engine_instance=dbc.engine)
-    )
-    session_factory = dbc.session_factory
+    init_filestorage()
+
+    # dbc = DBConfig()
+    # dbplugin = SQLAlchemyInitPlugin(
+    #     config=SQLAlchemyAsyncConfig(engine_instance=dbc.engine)
+    # )
+    # session_factory = dbc.session_factory
+    dbplugin = SQLAlchemyPlugin(config=alchemy_config)
+    session_factory = alchemy_config.session_maker
 
     async def preload_enumkeys() -> None:
-        async with session_factory() as session:
+        # async with session_factory() as session:
+        async with alchemy_config.get_session() as session:
             await EnumKeyRegistry.load_all(session)
 
     flash_plugin = FlashPlugin(config=flash_config)
@@ -156,6 +193,8 @@ def init_app() -> Litestar:
             UserDomainView,
             UserView,
             GroupView,
+            FileAttachmentView,
+            FileObjectView,
             API_v1,
         ],
         dependencies={"transaction": provide_transaction},
