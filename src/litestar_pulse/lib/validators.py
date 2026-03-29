@@ -122,6 +122,7 @@ class Validator:
     email: bool = False
     strip: bool = True
     yaml: bool = False
+    fileupload: bool = False
     max_value: int | None = None
     min_value: int | None = None
     list_item_type: type | None = None
@@ -158,6 +159,12 @@ class Validator:
             return (True, "")
 
         if self.type == list and not self.required and value in (None, "", []):
+            return (True, "")
+
+        if self.fileupload:
+            # we accept everything for file uploads and defer validation to the file handling logic,
+            # since the input will be a FileStorage object or similar, not a string or scalar value
+            # what we can do is probably testing for extension filename, size limit, etc
             return (True, "")
 
         if self.strip and isinstance(value, str):
@@ -235,6 +242,12 @@ class Validator:
         return (True, "")
 
     def transform(self, value: Any) -> Any:
+
+        if self.fileupload:
+            # For file uploads, we return the raw value (e.g. FileStorage object) and
+            # defer processing to the file handling logic
+            return value
+
         if self.strip and isinstance(value, str):
             value = value.strip()
 
@@ -551,6 +564,15 @@ def YAML(required: bool = False) -> Validator:
         type=str,
         required=required,
         yaml=True,
+    )
+
+
+def FileUpload(required: bool = False) -> Validator:
+    """Helper function to create a File Upload Validator."""
+    return Validator(
+        type=Any,
+        required=required,
+        fileupload=True,
     )
 
 

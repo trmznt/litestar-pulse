@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import exc
 
 from advanced_alchemy.exceptions import IntegrityError
+from advanced_alchemy.types.file_object import FileObject, storages
 
 from litestar import Request
 
@@ -27,6 +28,31 @@ from . import validators as v
 from . import compositetags as ct
 
 from ..db.models.enumkey import EnumKeyRegistry
+
+
+##
+# Design Notes
+# ============
+#
+# ModelForm():
+# .field = InputField() -> _InputFieldProxy()
+# .obj = the database object being edited
+#
+# InputField():
+# ._name = field name set by __set_name__
+# ._owner = <ModelForm> subclass where this field is declared
+# ._forminput = tagato.BaseInput()
+#
+# _InputFieldProxy():
+# .owner_instance = ModelForm() instance this proxy is bound to
+# .name = field name (same as InputField._name)
+# .input_field = the InputField() descriptor this proxy is for
+# .form_input = the tagato.BaseInput() instance from the InputField, with options populated
+# .get_value() -> retrieves the current value for this field from the form data or DB object
+# .validate() -> delegates to the InputField's validator
+# .opts() -> forwards display options to the form_input widget
+#
+# most
 
 
 class ParseFormError(ValueError):
@@ -77,7 +103,7 @@ class _InputFieldProxy:
 
     owner_instance: Any  # the ModelForm instance
     name: str  # the field attribute name
-    input_field: InputField  # the InputField descriptor instance
+    input_field: "InputField"  # the InputField descriptor instance
 
     def get_name(self) -> str:
         return self.name
@@ -259,6 +285,25 @@ class _DBEnumKeyInputFieldProxy(_InputFieldProxy):
         return (None, None)
 
 
+class _FileUploadFieldProxy(_InputFieldProxy):
+    """Proxy for FileUploadField — handles file upload validation and transformation."""
+
+    def get_value(self) -> Any:
+        """Override to return the uploaded file object instead of form data."""
+        obj = getattr(self.owner_instance, "obj", None)
+        data = getattr(self.owner_instance, "data")
+
+        if self.name in data:
+            # the data dictionary has the uploaded file object from the request
+            return data[self.name]  # this should be the uploaded file object
+
+        if obj is not None:
+            file_object: FileObject = getattr(obj, self.name, None)
+            value = t.a(href=self.input_field)
+            return file_object
+        return None
+
+
 @dataclass
 class InputField:
     """Descriptor that combines a Validator with a form input widget.
@@ -302,8 +347,10 @@ class InputField:
         Registers the field name in the owner class's ``__fields__`` list so
         that ModelForm.validate / .update can iterate over all declared fields.
         """
-        self._name = name
-        self._owner = owner
+        self._name = name  # name of the field
+        self._owner = (
+            owner  # usually the ModelForm subclass where this field is declared
+        )
 
         if self._FIELD_LIST_ATTR not in owner.__dict__:
             setattr(owner, self._FIELD_LIST_ATTR, [])
@@ -314,10 +361,15 @@ class InputField:
             "InputField instance is not supposed to be set with a value."
         )
 
-    def __get__(self, instance: Any, owner: Any) -> Any:
+    def __get__(self, instance: Any, owner: Any) -> _InputFieldProxy | Self:
         """Return the InputField class object when accessed on the class,
         or a cached proxy bound to the form instance when accessed on
         an instance.
+
+        instance: the instance of the owner
+        owner: the class where this descriptor is declared (usually a ModelForm subclass)
+        returning the instance of inputfield proxy which has access to both the field definition and
+        the form instance
         """
         if instance is None:
             return self
@@ -331,6 +383,10 @@ class InputField:
 
     def opts(self, **kwargs: Any) -> Self:
         # this relay the options to forminput or validator
+        # not sure we need this
+        raise NotImplementedError(
+            "opts() should be implemented in the InputField proxy class."
+        )
         self._forminput.opts(**kwargs)
 
     @cached_property
@@ -868,6 +924,77 @@ class TomSelectEnumKeyCollectionField(InputField):
         )
 
 
+class FileUploadField(InputField):
+    """File input field for uploading files."""
+
+    def __init__(
+        self,
+        label: str,
+        required: bool = False,
+        validator: v.Validator = v.FileUpload,
+        forminput: f.FormField = f.FileInput,
+        **kwargs: Any,
+    ) -> None:
+        _validator = validator(
+            required=required,
+            **kwargs,
+        )
+        super().__init__(
+            label=label,
+            validator=_validator,
+            forminput=forminput,
+            proxy_class=_FileUploadFieldProxy,
+        )
+
+
+class PreUploadFileField(InputField):
+    """File input field for uploading files."""
+
+    def __init__(
+        self,
+        label: str,
+        required: bool = False,
+        validator: v.Validator = v.FileUpload,
+        forminput: f.FormField = f.FileInput,
+        **kwargs: Any,
+    ) -> None:
+        _validator = validator(
+            required=required,
+            **kwargs,
+        )
+        super().__init__(
+            label=label,
+            validator=_validator,
+            forminput=forminput,
+            proxy_class=_FileUploadFieldProxy,
+        )
+
+
+class FilePondUploadField(InputField):
+    """File input field rendered with FilePond for enhanced UX."""
+
+    def __init__(
+        self,
+        label: str,
+        required: bool = False,
+        validator: v.Validator = v.FileUpload,
+        forminput: f.FormField = lambda **kwargs: f.FileInput(multiple=True, **kwargs),
+        filepond_options: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        _validator = validator(
+            required=required,
+            **kwargs,
+        )
+        super().__init__(
+            label=label,
+            validator=_validator,
+            forminput=forminput,
+            proxy_class=_FileUploadFieldProxy,
+        )
+        self.filepond_options = filepond_options or {}
+
+
 # ------------------
 #
 #  Utilities
@@ -1038,6 +1165,8 @@ class ModelForm:
 
         await self.before_update(obj, data, dbhandler.session)
 
+        print("Updating object with data:", data)
+
         try:
             srv = dbhandler.get_service(self.model_type)
             await srv.update_from_dict(obj, data)
@@ -1164,6 +1293,7 @@ class ModelForm:
                 self.controller_for_update,
                 dbid=obj.id if (obj and obj.id) else 0,
             ),
+            enctype="multipart/form-data",
             _readonly=readonly,
         )[
             t.fieldset(name="hidden")[
