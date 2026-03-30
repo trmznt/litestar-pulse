@@ -76,6 +76,24 @@ class TestListValidators(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(err, "This field is required.")
 
+    def test_yaml_rejects_null_mapping_key(self) -> None:
+        validator = v.YAML(required=True)
+
+        ok, err = validator.validate("{null}")
+        self.assertFalse(ok)
+        self.assertIn("mapping keys must be strings", err)
+
+    def test_yaml_accepts_string_keys(self) -> None:
+        validator = v.YAML(required=True)
+
+        ok, err = validator.validate("{scheme: local, enabled: true}")
+        self.assertTrue(ok)
+        self.assertEqual(err, "")
+        self.assertEqual(
+            validator.transform("{scheme: local, enabled: true}"),
+            {"scheme": "local", "enabled": True},
+        )
+
 
 class TestTomSelectEnumKeyCollectionField(unittest.TestCase):
     def test_field_instantiation(self) -> None:
