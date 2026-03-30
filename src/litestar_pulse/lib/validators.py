@@ -182,6 +182,9 @@ class Validator:
         # Boolean validation (early return — bool rules differ from other types)
         if self.type == bool:
             if not isinstance(value, bool):
+                if isinstance(value, list) and len(value) == 2:
+                    # Handle checkbox inputs that come as single-item lists
+                    value = value[-1]
                 if isinstance(value, str):
                     if value.lower() not in (
                         "true",
@@ -260,6 +263,9 @@ class Validator:
         if self.type == bool:
             if isinstance(value, bool):
                 return value
+            if isinstance(value, list) and len(value) == 2:
+                # Handle checkbox inputs that come as single-item lists
+                value = value[-1]
             if isinstance(value, str):
                 if value.lower() in ("true", "1", "yes", "on"):
                     return True
@@ -272,7 +278,11 @@ class Validator:
             return None
         if self.yaml:
             try:
-                return yaml.safe_load(value)
+                loaded = yaml.safe_load(value)
+                valid, err_msg = self._validate_yaml_loaded_value(loaded)
+                if not valid:
+                    raise ValueError(err_msg)
+                return loaded
             except yaml.YAMLError as e:
                 raise ValueError(f"Invalid YAML: {e}") from e
         if not self.required and value == "":
@@ -340,9 +350,13 @@ class Validator:
 
         if self.yaml:
             try:
-                yaml.safe_load(str_value)
+                loaded = yaml.safe_load(str_value)
             except yaml.YAMLError as e:
                 return (False, f"This field must be valid YAML: {e}")
+
+            valid, err_msg = self._validate_yaml_loaded_value(loaded)
+            if not valid:
+                return (False, err_msg)
 
         if self.max_length is not None and len(str_value) > self.max_length:
             return (
@@ -358,6 +372,33 @@ class Validator:
             return (False, "This field must be a valid email address.")
 
         return (True, "")
+
+    def _validate_yaml_loaded_value(self, value: Any) -> tuple[bool, str]:
+        """Validate parsed YAML structure for JSONB compatibility.
+
+        Litestar's JSON serializer rejects mappings with non-string keys.
+        Reject those early during form validation.
+        """
+
+        def _check(node: Any, path: str = "root") -> tuple[bool, str]:
+            if isinstance(node, dict):
+                for key, item in node.items():
+                    if not isinstance(key, str):
+                        return (
+                            False,
+                            f"YAML mapping keys must be strings; got {type(key).__name__} at {path}.",
+                        )
+                    ok, msg = _check(item, f"{path}.{key}")
+                    if not ok:
+                        return (False, msg)
+            elif isinstance(node, list):
+                for idx, item in enumerate(node):
+                    ok, msg = _check(item, f"{path}[{idx}]")
+                    if not ok:
+                        return (False, msg)
+            return (True, "")
+
+        return _check(value)
 
 
 def String(
