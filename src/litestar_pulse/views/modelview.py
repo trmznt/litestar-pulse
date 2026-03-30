@@ -293,7 +293,7 @@ class LPModelView(LPBaseView):
                     errors = e.error_list
 
             if any(errors):
-                # re-show he form with errors
+                # re-show the form with errors
 
                 ctx = await form.html_form(
                     request=self.req,
@@ -345,7 +345,7 @@ class LPModelView(LPBaseView):
                 )
 
         if any(errors):
-            # re-show he form with errors
+            # re-show the form with errors
             form = self.model_form(await self.get_model_instance(dbid=dbid), data)
             ctx = await form.html_form(
                 request=self.req,
