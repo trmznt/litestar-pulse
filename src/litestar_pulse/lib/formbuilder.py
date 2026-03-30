@@ -932,7 +932,9 @@ class FileUploadField(InputField):
         label: str,
         required: bool = False,
         validator: v.Validator = v.FileUpload,
-        forminput: f.FormField = f.FileInput,
+        forminput: f.FormField = lambda **kwargs: f.FileInput(
+            removal_flag="-retain-if-false!flag", **kwargs
+        ),
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -955,7 +957,7 @@ class PreUploadFileField(InputField):
         label: str,
         required: bool = False,
         validator: v.Validator = v.FileUpload,
-        forminput: f.FormField = f.FileInput,
+        forminput: f.FormField = lambda **kwargs: f.FileInput(**kwargs),
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -1117,6 +1119,18 @@ class ModelForm:
         etc.) without actually setting the values on the object.  The resulting
         dict can be used for partial updates or other purposes.
 
+        Flag attributes are those ending with "!flag" which indicate special handling
+        (e.g. file removal) and are not passed to validators or transformed, but are
+        being used to process the attributes in the transformed_data.
+
+        -remove-if-false!flag, -retain-if-false!flag
+
+        Attribute ATTR-remove-if-false!flag is used to indicate that ATTR should be removed
+        from transformed_data if the ATTR is false (None, empty string, empty list, etc.)
+        in the submitted data.
+        For example, file uploads with an empty value indicates that
+        the existing file should be retained .
+
         :param obj: the current database object (passed to validators for context-aware transformations)
         :param data: the submitted form data dict
         :return: a new dict with transformed values for each field present in ``data``
@@ -1147,6 +1161,17 @@ class ModelForm:
 
         if any(error_list):
             raise ParseFormError(error_list)
+
+        # processed special flag attributes for transformations that are not handled
+        # by validators, such as attribute removal flags
+        for key in [s for s in data.keys() if s.endswith("-retain-if-false!flag")]:
+
+            # if -retain-if-false!flag is not true, keep the existing value by not
+            # including it in transformed_data as long as the
+            attr_name = key.removesuffix("-retain-if-false!flag")
+            if not data.pop(key):
+                if not transformed_data.get(attr_name):
+                    del transformed_data[attr_name]
 
         return transformed_data
 
