@@ -149,7 +149,8 @@ class selection_bar(object):
                     value=self.delete_value,
                     type="button",
                 )[
-                    t.i(class_="fas fa-trash"),
+                    t.i(class_="bi bi-trash3-fill"),
+                    " ",
                     self.delete_label,
                 ]
             ],
@@ -163,7 +164,7 @@ class selection_bar(object):
                 t.div(class_="btn-group me-2")[
                     t.a(href=self.add[1])[
                         t.button(type="button", class_="btn btn-sm btn-success")[
-                            self.add[0]
+                            t.i(class_="bi bi-plus-circle-fill"), " ", self.add[0]
                         ]
                     ]
                 ]
