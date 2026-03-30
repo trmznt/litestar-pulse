@@ -207,7 +207,7 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
             # FileObject listener relies on that history for auto-cleanup.
             old_attachment = getattr(instance, attr_name, None)
 
-            file_attachment = data[attr_name]
+            file_attachment = data.pop(attr_name, None)
             if file_attachment:
                 data[attr_name] = await self.create_file_object(
                     file_attachment, instance.uuid
