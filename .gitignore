@@ -6,6 +6,9 @@ dist/
 wheels/
 *.egg-info
 
+# external envs
+envs/
+
 # Virtual environments
 uv.lock
 .venv
