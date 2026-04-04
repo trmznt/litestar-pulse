@@ -10,9 +10,18 @@ __license__ = "MPL-2.0"
 import asyncio
 import base64
 
-from passlib.context import CryptContext
+from pwdlib import PasswordHash
+from pwdlib.exceptions import UnknownHashError
 
-password_crypt_context = CryptContext(schemes=["argon2"], deprecated="auto")
+password_hasher = PasswordHash.recommended()
+
+
+def _coerce_password_input(password: str | bytes) -> str:
+    """Normalize password input for pwdlib APIs."""
+
+    if isinstance(password, bytes):
+        return password.decode()
+    return password
 
 
 def get_encryption_key(secret: str) -> bytes:
@@ -37,8 +46,8 @@ async def hash_password(password: str | bytes) -> str:
     Returns:
         str: Hashed password
     """
-    return await asyncio.get_running_loop().run_in_executor(
-        None, password_crypt_context.hash, password
+    return await asyncio.to_thread(
+        password_hasher.hash, _coerce_password_input(password)
     )
 
 
@@ -52,12 +61,13 @@ async def verify_password(plain_password: str | bytes, hashed_password: str) -> 
     Returns:
         bool: True if password matches hash.
     """
-    valid = await asyncio.get_running_loop().run_in_executor(
-        None,
-        password_crypt_context.verify,
-        plain_password,
-        hashed_password,
-    )
+    plain = _coerce_password_input(plain_password)
+
+    try:
+        valid = await asyncio.to_thread(password_hasher.verify, plain, hashed_password)
+    except (UnknownHashError, ValueError):
+        return False
+
     return bool(valid)
 
 
