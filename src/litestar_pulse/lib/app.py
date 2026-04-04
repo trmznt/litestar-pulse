@@ -18,16 +18,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from advanced_alchemy.extensions.litestar import SQLAlchemyPlugin
 
-from litestar import Litestar
+from litestar import Litestar, get
 from litestar.middleware import DefineMiddleware
-from litestar.exceptions import ClientException, NotFoundException
+from litestar.exceptions import (
+    ClientException,
+    NotAuthorizedException,
+    NotFoundException,
+)
 from litestar.plugins.sqlalchemy import SQLAlchemyAsyncConfig, SQLAlchemyInitPlugin
 
 # from litestar_pulse.lib.sqlalchemy_imports import (
 #    SQLAlchemyAsyncConfig,
 #    SQLAlchemyInitPlugin,
 # )
-from litestar.status_codes import HTTP_409_CONFLICT
+from litestar.status_codes import HTTP_409_CONFLICT, HTTP_204_NO_CONTENT
 from litestar.middleware.session.server_side import (
     ServerSideSessionBackend,
     ServerSideSessionConfig,
@@ -51,7 +55,11 @@ from litestar_pulse.config.filestorage import init_filestorage
 from litestar_pulse.db.models import account
 from litestar_pulse.db.models.enumkey import EnumKeyRegistry
 from litestar_pulse.lib.debugger import SelectiveDebugger
-from litestar_pulse.lib.exceptions import handle_not_found, mako_html_exception_handler
+from litestar_pulse.lib.exceptions import (
+    handle_not_found,
+    auth_exception_handler,
+    mako_html_exception_handler,
+)
 from litestar_pulse.lib.auth import session_auth
 from litestar_pulse.lib.middleware import HandlerContextMiddleware
 from litestar_pulse.lib.utils import resources_to_paths
@@ -105,6 +113,11 @@ toolbar_config = LitestarDebugToolbarConfig(
 )
 
 
+@get("/favicon.ico", status_code=HTTP_204_NO_CONTENT)
+def handle_favicon() -> None:
+    return None
+
+
 def init_app() -> Litestar:
 
     from litestar_pulse.views.components import user_menu
@@ -115,6 +128,7 @@ def init_app() -> Litestar:
     from litestar_pulse.views.userdomain import UserDomainView
     from litestar_pulse.views.user import UserView
     from litestar_pulse.views.group import GroupView
+    from litestar_pulse.views.async_fileupload import AsyncFileUpload
     from litestar_pulse.views.fileobjects import FileAttachmentView, FileObjectView
     from litestar_pulse.views.api_v1 import API_v1
 
@@ -163,11 +177,13 @@ def init_app() -> Litestar:
         plugins.append(DebugToolbarPlugin(toolbar_config))
         exception_handlers = {
             NotFoundException: handle_not_found,
+            NotAuthorizedException: auth_exception_handler,
             Exception: mako_html_exception_handler,
         }
     else:
         exception_handlers = {
             NotFoundException: handle_not_found,
+            NotAuthorizedException: auth_exception_handler,
         }
 
     # when run in PDB mode, use the following debugger
@@ -186,6 +202,7 @@ def init_app() -> Litestar:
 
     return Litestar(
         route_handlers=[
+            handle_favicon,
             static_route_handler,
             HomeView,
             LoginView,
@@ -196,6 +213,7 @@ def init_app() -> Litestar:
             FileAttachmentView,
             FileObjectView,
             API_v1,
+            AsyncFileUpload,
         ],
         dependencies={"transaction": provide_transaction},
         middleware=[
