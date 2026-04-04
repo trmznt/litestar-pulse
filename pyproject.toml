@@ -9,15 +9,18 @@ authors = [
 license = "MPL-2.0"
 requires-python = ">=3.12"
 dependencies = [
-    "advanced-alchemy[cli,uuid]>=1.8.2",
+    "advanced-alchemy[cli,nanoid,uuid]>=1.8.2",
     "aiosqlite>=0.22.0",
     "black>=25.12.0",
+    "fsspec>=2026.2.0",
     "granian[reload]>=2.6.0",
-    "htpy>=25.12.0",
     "ipdb>=0.13.13",
-    "litestar[jwt,mako,sqlalchemy,standard,uuid]>=2.19.0",
+    "lazy-object-proxy>=1.12.0",
+    "litestar-debug-toolbar>=0.4.2",
+    "litestar[jwt,mako,sqlalchemy,standard]>=2.19.0",
     "nest-asyncio>=1.6.0",
     "passlib[argon2]>=1.7.4",
+    "pytest>=9.0.2",
     "snowflake-id>=1.0.2",
 ]
 
@@ -31,5 +34,8 @@ pulsemgr = "litestar_pulse.cli.commands:main"
 [build-system]
 requires = ["uv_build>=0.9.18,<0.10.0"]
 build-backend = "uv_build"
+
+[tool.black]
+target-version = ["py312"]
 
 # EOF
