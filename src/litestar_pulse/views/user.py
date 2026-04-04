@@ -58,6 +58,7 @@ class UserForm(fb.ModelForm):
         text_from="name",
         option_async_callback=lambda ctrl: ctrl.dbh.repo.Group.get_all_for_options,
     )
+    attachment = fb.FileUploadField(label="Attachment", required=False)
 
     async def set_layout(self, controller: Any = None) -> t.htmltag:
         form_layout = t.fragment()[
@@ -76,6 +77,7 @@ class UserForm(fb.ModelForm):
                 ],
                 self.institution.opts(offset=2, size=5),
                 self.primarygroup_id.opts(offset=2, size=3),
+                self.attachment.opts(offset=2, size=5),
             ],
         ]
         return form_layout
@@ -352,8 +354,8 @@ def additional_usergroup_buttons(selection_bar: ct.selection_bar) -> t.htmltag:
             value="usergroup-modify-confirmation",
             type="button",
         )[
-            t.i(class_="fas fa-exchange-alt"),
-            "Modify role",
+            t.i(class_="bi bi-pencil-square"),
+            " Modify role",
         ],
         t.button(
             class_="btn btn-sm btn-success",
@@ -362,8 +364,8 @@ def additional_usergroup_buttons(selection_bar: ct.selection_bar) -> t.htmltag:
             value="usergroup-add-confirmation",
             type="button",
         )[
-            t.i(class_="fas fa-exchange-alt"),
-            "Add to group",
+            t.i(class_="bi bi-plus-circle-fill"),
+            " Add to group",
         ],
     ]
 
@@ -708,7 +710,7 @@ async def generate_usergroup_add_popup(
                             class_="btn border-0 bg-transparent text-danger",
                             **{"x-on:click": "rows.splice(index, 1)"},
                             x_show="rows.length > 1",
-                        )[t.literal("&#x2327;")]
+                        )[t.i(class_="bi bi-x-circle-fill")]
                     ],
                 ]
             ]
