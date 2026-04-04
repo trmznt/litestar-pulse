@@ -9,7 +9,10 @@ __license__ = "MPL-2.0"
 
 
 import types
+import logging
 import yaml
+import anyio
+import shutil
 from pathlib import Path
 from collections.abc import Awaitable
 from typing import Any, Awaitable, TypeVar
@@ -18,10 +21,12 @@ import fastnanoid
 
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import DeclarativeBase, undefer, joinedload, object_session
+from sqlalchemy.ext.mutable import MutableList
+from sqlalchemy.orm.attributes import flag_modified
 
 from advanced_alchemy.repository import SQLAlchemyAsyncRepository
 from advanced_alchemy.service import SQLAlchemyAsyncRepositoryService
-from advanced_alchemy.types.file_object import FileObject
+from advanced_alchemy.types.file_object import FileObject, FileObjectList
 
 from litestar.dto import DTOConfig
 from litestar.plugins.sqlalchemy import SQLAlchemyDTO
@@ -31,8 +36,11 @@ from litestar.plugins.sqlalchemy import SQLAlchemyDTO
 from . import set_handler_class, handler_factory, get_handler
 from .models.meta import LPAsyncSession
 from .models import account, enumkey, fileobjects  # noqa: F401
+from ..lib.fileupload import FileUploadProxy
 
 import lazy_object_proxy as lop
+
+logger = logging.getLogger(__name__)
 
 # repositories
 
@@ -144,8 +152,18 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
             await self.before_update_from_dict(instance, data)
 
             # update instance attributes from data dict
+            # handle MutableList fields with in-place mutation to ensure
+            # SQLAlchemy change tracking works correctly
             for key, value in data.items():
-                setattr(instance, key, value)
+                field = getattr(instance, key)
+                if isinstance(field, MutableList):
+                    field[:] = value
+                    field.changed()
+                    flag_modified(instance, key)
+                else:
+                    setattr(instance, key, value)
+                    if isinstance(value, (list, MutableList)):
+                        flag_modified(instance, key)
 
         state = inspect(instance)
         if state.pending or state.transient:
@@ -158,38 +176,111 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
 
     # generic file upload handling methods that can be used by inherited services
 
-    def generate_storage_path(self, uuid: str) -> str:
-        # generate a file path for the given uuid using the first 2 characters as subdirectories
-        class_name = self.repository.model_type.__name__.lower()
-        return (
-            f"{class_name}/{uuid[-2:]}/{uuid[2:4]}/{uuid}/{fastnanoid.generate(size=8)}"
-        )
+    async def _save_file_object_from_source_path(
+        self, file_object: FileObject, source_path: str
+    ) -> None:
+        """Persist file content from local source path without loading full bytes into memory."""
 
-    async def create_file_object(self, uploaded_file: Any, uuid: str) -> FileObject:
+        backend = file_object.backend
+        if hasattr(backend, "fs") and hasattr(backend, "_prepare_path"):
+            full_path = str(backend._prepare_path(file_object.path))
+            logger.info(
+                "FileObject save via source_path/fsspec put_file: source=%s dest=%s",
+                source_path,
+                full_path,
+            )
+            if "://" not in full_path:
+                src = Path(source_path)
+                dst = Path(full_path)
+
+                def _mkdir() -> None:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+
+                await anyio.to_thread.run_sync(_mkdir)
+                await anyio.to_thread.run_sync(shutil.copy2, src, dst)
+            else:
+                await anyio.to_thread.run_sync(
+                    backend.fs.put_file, str(source_path), full_path
+                )
+
+            # Keep commonly used metadata fields in sync when available.
+            try:
+                info = await anyio.to_thread.run_sync(backend.fs.info, full_path)
+                if isinstance(info, dict) and "size" in info:
+                    file_object.size = int(info["size"])
+            except Exception:
+                # Metadata refresh failures should not fail the upload itself.
+                pass
+            return
+
+        logger.info(
+            "FileObject save via source_path/file_object.save_async fallback: source=%s path=%s",
+            source_path,
+            file_object.path,
+        )
+        file_object.source_path = str(source_path)
+        await file_object.save_async()
+
+    async def create_file_object(self, instance: Any, uploaded_file: Any) -> FileObject:
         # create a FileObject from the given uploaded file
-        uuid = str(uuid)
-        if (
+
+        to_filename, _ = instance.get_fileobject_storage_path()
+        if isinstance(uploaded_file, FileUploadProxy):
+            logger.info(
+                "create_file_object using FileUploadProxy source path: filename=%s path=%s",
+                uploaded_file.filename,
+                uploaded_file.path,
+            )
+            file_object = FileObject(
+                backend=instance.get_storage_backend(),
+                filename=uploaded_file.filename,
+                to_filename=to_filename,
+                metadata=dict(
+                    filename=uploaded_file.filename,
+                    content_type="application/octet-stream",
+                    description=getattr(uploaded_file, "description", "") or "",
+                    category=getattr(uploaded_file, "category", "") or "",
+                ),
+            )
+            await self._save_file_object_from_source_path(
+                file_object, str(uploaded_file.path)
+            )
+            return file_object
+        elif (
             isinstance(uploaded_file.file.name, str)
             and Path(uploaded_file.file.name).exists()
         ):
+            logger.info(
+                "create_file_object using uploaded file temp path: filename=%s path=%s",
+                uploaded_file.filename,
+                uploaded_file.file.name,
+            )
             file_object = FileObject(
-                backend="lp_storage",
-                filename=self.generate_storage_path(uuid),
+                backend=instance.get_storage_backend(),
+                filename=uploaded_file.filename,
+                to_filename=to_filename,
                 metadata=dict(
                     filename=uploaded_file.filename,
                     content_type=uploaded_file.content_type,
                 ),
-                source_path=uploaded_file.file.name,
             )
+            await self._save_file_object_from_source_path(
+                file_object, str(uploaded_file.file.name)
+            )
+            return file_object
         else:
+            logger.info(
+                "create_file_object using in-memory content fallback: filename=%s",
+                uploaded_file.filename,
+            )
             content = uploaded_file.file.read()
             file_object = FileObject(
-                backend="lp_storage",
-                filename=self.generate_storage_path(uuid),
+                backend=instance.get_storage_backend(),
+                filename=uploaded_file.filename,
+                to_filename=to_filename,
                 metadata=dict(
                     filename=uploaded_file.filename,
                     content_type=uploaded_file.content_type,
-                    source_path=uploaded_file.file.name,
                 ),
                 content=content,
             )
@@ -210,7 +301,7 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
             file_attachment = data.pop(attr_name, None)
             if file_attachment:
                 data[attr_name] = await self.create_file_object(
-                    file_attachment, instance.uuid
+                    instance, file_attachment
                 )
             else:
                 data[attr_name] = None
@@ -221,6 +312,82 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
                     "_lp_pending_file_deletes", []
                 )
                 pending.append(old_attachment)
+
+    async def update_fileobject_list(
+        self, instance: Any, attr_name: str, data: dict[str, Any]
+    ) -> None:
+        # set a list of file attachments on the instance, ensuring
+        # relationships are properly tracked for cleanup
+
+        if attr_name in data:
+            instance_file_objects: FileObjectList | None = getattr(
+                instance, attr_name, None
+            )
+            if instance_file_objects is None:
+                instance_file_objects = FileObjectList()
+
+            instance_file_objects_indexed: dict[str, FileObject] = {}
+            if instance_file_objects:
+                for fo in instance_file_objects:
+                    path = str(getattr(fo, "path", "") or "")
+                    filename = str(getattr(fo, "filename", "") or "")
+                    dbid = str(getattr(fo, "id", "") or "")
+                    for key in (path, filename, dbid):
+                        if key:
+                            instance_file_objects_indexed[key] = fo
+
+            fileuploadproxy_list = data.get(attr_name, [])
+            new_files = []
+            existing_files = []
+
+            matched_existing = set()
+
+            for fileuploadproxy in fileuploadproxy_list:
+                if not getattr(fileuploadproxy, "selected", True):
+                    # explicit unselected items are treated as removals
+                    continue
+
+                if fileuploadproxy.is_new_upload:
+                    new_file_object = await self.create_file_object(
+                        instance, fileuploadproxy
+                    )
+                    new_files.append(new_file_object)
+                else:
+                    fileobject = instance_file_objects_indexed.pop(
+                        fileuploadproxy.upload_id
+                    )
+                    if fileobject is None:
+                        raise ValueError(
+                            f"FileObject with key {fileuploadproxy.upload_id} not found"
+                        )
+
+                    # Preserve per-item metadata edits coming from the form JSON.
+                    metadata = dict(getattr(fileobject, "metadata", {}) or {})
+                    metadata["description"] = (
+                        getattr(fileuploadproxy, "description", "") or ""
+                    )
+                    metadata["category"] = (
+                        getattr(fileuploadproxy, "category", "") or ""
+                    )
+                    fileobject.metadata = metadata
+
+                    existing_files.append(fileobject)
+
+            merged_files = existing_files + new_files
+            instance_file_objects[:] = merged_files
+            if isinstance(instance_file_objects, MutableList):
+                instance_file_objects.changed()
+                data[attr_name] = instance_file_objects
+            else:
+                data[attr_name] = FileObjectList(merged_files)
+
+            for deleted_fileobject in instance_file_objects_indexed.values():
+                pending = self.repository.session.info.setdefault(
+                    "_lp_pending_file_deletes", []
+                )
+                pending.append(deleted_fileobject)
+            setattr(instance, attr_name, instance_file_objects)
+            flag_modified(instance, attr_name)
 
 
 class EnumKeyService(LPBaseService[enumkey.EnumKey]):
@@ -238,6 +405,9 @@ class UserDomainService(LPBaseService[account.UserDomain]):
 
         if "attachment" in data:
             await self.set_file_object(instance, "attachment", data)
+
+        if "files" in data:
+            await self.update_fileobject_list(instance, "files", data)
 
 
 class GroupService(LPBaseService[account.Group]):
