@@ -16,7 +16,11 @@ import ipdb
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from advanced_alchemy.extensions.litestar import SQLAlchemyPlugin
+from advanced_alchemy.extensions.litestar import (
+    SQLAlchemyPlugin,
+    SQLAlchemyAsyncConfig,
+    SQLAlchemyInitPlugin,
+)
 
 from litestar import Litestar, get
 from litestar.middleware import DefineMiddleware
@@ -25,7 +29,6 @@ from litestar.exceptions import (
     NotAuthorizedException,
     NotFoundException,
 )
-from litestar.plugins.sqlalchemy import SQLAlchemyAsyncConfig, SQLAlchemyInitPlugin
 
 # from litestar_pulse.lib.sqlalchemy_imports import (
 #    SQLAlchemyAsyncConfig,
@@ -151,7 +154,8 @@ def init_app() -> Litestar:
 
     debugger = SelectiveDebugger(
         ipdb,
-        excluded_exceptions=(NotFoundException,),
+        # set exceptions that need to be excluded from triggering the debugger
+        excluded_exceptions=(NotFoundException, NotAuthorizedException),
     )
 
     static_route_handler = create_static_files_router(
