@@ -10,13 +10,14 @@ __license__ = "MPL-2.0"
 
 from os import path
 from uuid import UUID
+import json
 
 from markupsafe import Markup, escape
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from litestar import Controller, Request, Response, get, post, patch, delete, MediaType
-from litestar.response import Redirect
+from litestar.response import Redirect, File
 from litestar.handlers import HTTPRouteHandler
 from litestar.status_codes import HTTP_303_SEE_OTHER
 from litestar.handlers.base import BaseRouteHandler
@@ -28,6 +29,7 @@ from litestar_pulse.db import set_handler
 from litestar_pulse.db.handler import handler_factory
 from litestar_pulse.lib.template import Template
 from litestar_pulse.lib import roles as r
+from litestar_pulse.lib.fileupload import FileUploadProxy
 
 from typing import TYPE_CHECKING, Any
 
@@ -202,8 +204,9 @@ class LPBaseView(LPController):
     form_template_file = "lp/generics/formpage.mako"
 
     @staticmethod
-    def normalize_form_data(form_data: Any) -> dict[str, Any]:
+    def normalize_form_data(form_data: Any, request: Request) -> dict[str, Any]:
         """Convert request form data to dict while preserving repeated keys as lists."""
+
         if hasattr(form_data, "multi_items"):
             data: dict[str, Any] = {}
             for key, value in form_data.multi_items():
@@ -215,10 +218,55 @@ class LPBaseView(LPController):
                         data[key] = [existing, value]
                 else:
                     data[key] = value
-            return data
-        if hasattr(form_data, "items"):
-            return dict(form_data.items())
-        return dict(form_data)
+        elif hasattr(form_data, "items"):
+            data = dict(form_data.items())
+        else:
+            data = dict(form_data)
+
+        # for values with keys ending with ":json:", try to parse them as JSON
+        for key, value in data.items():
+            if isinstance(value, str) and key.endswith(":json:"):
+                try:
+                    data[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    # If parsing fails, keep the original string value
+                    pass
+
+        # for keys having "NAME-:fileupload:json", parse the dictionary
+        # to list of FileUploadProxy objects, and store the list to
+        # NAME attribute.
+        for key, value in data.items():
+            if key.endswith("-:fileupload:json:"):
+                try:
+                    field_name = key.removesuffix("-:fileupload:json:")
+                    file_uploads = []
+                    if isinstance(value, str):
+                        value = json.loads(value)
+                    if isinstance(value, list):
+                        for item in value:
+                            if (
+                                isinstance(item, dict)
+                                and "id" in item
+                                and "name" in item
+                            ):
+                                file_uploads.append(
+                                    FileUploadProxy(
+                                        upload_id=item["id"],
+                                        filename=item["name"],
+                                        request=request,
+                                        selected=bool(item.get("selected", True)),
+                                        description=str(
+                                            item.get("description", "") or ""
+                                        ),
+                                        category=str(item.get("category", "") or ""),
+                                    )
+                                )
+                    data[field_name] = file_uploads
+
+                except Exception as e:
+                    raise e
+
+        return data
 
     async def index(self) -> dict[str, t.Tag | str]:
         """
@@ -245,7 +293,11 @@ class LPBaseView(LPController):
         """
         raise NotImplementedError
 
-    @get(path="/uuid/{uuid:uuid}", name="view-uuid")
+    @get(
+        path="/uuid/{uuid:uuid}",
+        name="view-uuid",
+        guards=[LPController.viewing_role_guard],
+    )
     async def view_uuid_html(
         self,
         uuid: UUID,
@@ -285,7 +337,9 @@ class LPBaseView(LPController):
         ctx.setdefault("title", Markup("Viewing ") + self.get_model_title(as_url=True))
         return Template(template_name=self.form_template_file, context=ctx)
 
-    @get(path="/{dbid:int}/edit", name="edit")
+    @get(
+        path="/{dbid:int}/edit", name="edit", guards=[LPController.managing_role_guard]
+    )
     async def edit_id_html(
         self,
         dbid: int,
@@ -331,7 +385,11 @@ class LPBaseView(LPController):
         """
         raise NotImplementedError
 
-    @post(path="/{dbid:int}/update", name="update")
+    @post(
+        path="/{dbid:int}/update",
+        name="update",
+        guards=[LPController.managing_role_guard],
+    )
     async def update_id_html(
         self,
         dbid: int,
@@ -349,7 +407,7 @@ class LPBaseView(LPController):
         )
         self.init_view(request, db_session, transaction)
         form_data = await request.form()
-        data = self.normalize_form_data(form_data)
+        data = self.normalize_form_data(form_data, request)
 
         response = await self.update(dbid=dbid, data=data)
 
@@ -363,7 +421,12 @@ class LPBaseView(LPController):
         """
         raise NotImplementedError
 
-    @delete(path="/{dbid:int}/delete", name="delete", status_code=HTTP_303_SEE_OTHER)
+    @delete(
+        path="/{dbid:int}/delete",
+        name="delete",
+        status_code=HTTP_303_SEE_OTHER,
+        guards=[LPController.managing_role_guard],
+    )
     async def delete_id_html(
         self,
         dbid: int,
@@ -392,7 +455,12 @@ class LPBaseView(LPController):
         """
         raise NotImplementedError
 
-    @post(path="/action", name="action", status_code=HTTP_303_SEE_OTHER)
+    @post(
+        path="/action",
+        name="action",
+        status_code=HTTP_303_SEE_OTHER,
+        guards=[LPController.managing_role_guard],
+    )
     async def action_html(
         self,
         request: Request,
@@ -475,14 +543,18 @@ class LPBaseView(LPController):
         """
         raise NotImplementedError
 
-    @get(path="/{dbid:int}/attachment", name="attachment")
+    @get(
+        path="/{dbid:int}/attachment",
+        name="attachment",
+        guards=[LPController.viewing_role_guard],
+    )
     async def attachment_html(
         self,
         dbid: int,
         request: Request,
         db_session: AsyncSession,
         transaction: AsyncSession,
-    ) -> Response[str] | Template:
+    ) -> File:
         """
         Render attachment page
         """
@@ -492,13 +564,39 @@ class LPBaseView(LPController):
             dbid,
         )
         self.init_view(request, db_session, transaction)
-        content = await self.attachment(dbid=dbid)
-        return Response(content=str(content), media_type="text/html")
+        return await self.attachment(dbid=dbid)
 
-    async def attachment(self, dbid: int | None = None) -> Any:
+    async def attachment(self, dbid: int | None = None) -> File:
         """
         Render attachment page
         """
+        raise NotImplementedError
+
+    @get(
+        path="/{dbid:int}/files/{fname:str}",
+        name="files",
+        guards=[LPController.viewing_role_guard],
+    )
+    async def files_html(
+        self,
+        dbid: int,
+        fname: str,
+        request: Request,
+        db_session: AsyncSession,
+        transaction: AsyncSession,
+    ) -> File:
+        """
+        Render file page
+        """
+        request.logger.info(
+            "Rendering file page for %s with dbid %d",
+            self.__class__.__name__,
+            dbid,
+        )
+        self.init_view(request, db_session, transaction)
+        return await self.files(dbid=dbid, fname=fname)
+
+    async def files(self, dbid: int | None = None, fname: str | None = None) -> File:
         raise NotImplementedError
 
 
