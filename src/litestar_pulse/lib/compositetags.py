@@ -9,7 +9,11 @@ __license__ = "MPL-2.0"
 
 # this module is based on https://github.com/trmznt/rhombus/blob/master/rhombus/lib/tags.py
 
-from tagato import tags as t
+import json
+from typing import Any
+from markupsafe import escape, Markup
+
+from tagato import tags as t, formfields as f
 
 
 def datetime(dt):
@@ -223,6 +227,379 @@ def selection_bar_js(*, form_id: str, prefix: str, checkbox_name: str = None) ->
     return SELECTION_BAR_JS_TEMPLATE.format(
         form_id=form_id, prefix=prefix, checkbox_name=checkbox_name
     )
+
+
+# @
+# Multiple file upload input
+
+
+class MultipleFileInput(f.BaseInput):
+    """
+    A custom form input for handling advanced-alchemy FileObjectList directly.
+    """
+
+    def render_input(self, value: Any = None) -> t.Tag:
+        theme = self._theme()
+        readonly = self.is_readonly()
+
+        # value should be a list of FileObject instances
+        file_objects = (value if value is not None else self.get_value()) or []
+
+        if readonly:
+            # Show the filename as plain text in readonly mode (no input)
+            return t.div(class_=theme.value_col(self.size))[
+                t.div(class_="form-control-plaintext")[
+                    (
+                        t.ul[
+                            [
+                                t.li[escape(f.metadata.get("filename"))]
+                                for f in file_objects
+                            ]
+                        ]
+                        if any(file_objects)
+                        else "No files"
+                    )
+                ]
+            ]
+
+        return t.div(class_=theme.value_col(self.size))[
+            t.div(class_="form-control-plaintext")[
+                (
+                    [
+                        t.div[
+                            f.CheckboxInput(
+                                name=self.name + "-list",
+                                value=file_obj.filename,
+                                label=escape(file_obj.metadata.get("filename")),
+                            )
+                        ]
+                        for file_obj in file_objects
+                    ]
+                    if any(file_objects)
+                    else "No files"
+                )
+            ],
+            t.input(
+                type="file",
+                id=self.id,
+                name=self.name,
+                class_="filepond " + theme.input_class(error=bool(self.error)),
+                placeholder=self.placeholder,
+                style=self.input_style,
+                readonly=readonly,
+                multiple=True,
+            ),
+            theme.error_feedback(self.error),
+        ]
+
+
+class FilePondInput(f.BaseInput):
+    """
+    A custom form input for handling advanced-alchemy FileObjectList directly.
+    """
+
+    def opts_xxx(self, **kwargs):
+        self.options = kwargs.pop("options", {})
+        print("FilePondInput options:", self.options)
+        raise
+        return super().opts(**kwargs)
+
+    @staticmethod
+    def _normalize_uploads(
+        *, file_objects: list[Any], uploads: dict[str, Any] | None
+    ) -> list[dict[str, Any]]:
+        """Normalize uploads into Alpine-ready dicts with selection and metadata fields."""
+
+        normalized: list[dict[str, Any]] = []
+
+        if uploads:
+            if isinstance(uploads, list):
+                return uploads
+
+            for key, value in uploads.items():
+                if isinstance(value, dict):
+                    upload_id = str(value.get("id", key))
+                    upload_name = str(value.get("name", upload_id))
+                    upload_selected = bool(value.get("selected", True))
+                    upload_description = str(value.get("description", "") or "")
+                    upload_category = str(value.get("category", "") or "")
+                else:
+                    upload_id = str(key)
+                    upload_name = str(value)
+                    upload_selected = True
+                    upload_description = ""
+                    upload_category = ""
+                normalized.append(
+                    {
+                        "id": upload_id,
+                        "name": upload_name,
+                        "selected": upload_selected,
+                        "description": upload_description,
+                        "category": upload_category,
+                    }
+                )
+            return normalized
+
+        for file_obj in file_objects:
+            if isinstance(file_obj, dict) and "id" in file_obj:
+                normalized.append(file_obj)
+                continue
+            upload_id = str(
+                getattr(file_obj, "path", "") or getattr(file_obj, "filename", "")
+            )
+            metadata = getattr(file_obj, "metadata", {}) or {}
+            upload_name = str(metadata.get("filename") or upload_id)
+            upload_description = str(metadata.get("description") or "")
+            upload_category = str(metadata.get("category") or "")
+            if upload_id:
+                normalized.append(
+                    {
+                        "id": upload_id,
+                        "name": upload_name,
+                        "selected": True,
+                        "description": upload_description,
+                        "category": upload_category,
+                    }
+                )
+
+        return normalized
+
+    def render_input(self, value: Any = None) -> t.Tag:
+        theme = self._theme()
+        readonly = self.is_readonly()
+
+        # value: [list[FileObject | str | None] | str | None]
+        file_objects = (value if value is not None else self.get_value()) or []
+
+        if readonly:
+            # Show the filename as plain text in readonly mode (no input)
+            return t.div(class_=theme.value_col(self.size))[
+                t.div(class_="form-control-plaintext")[
+                    (
+                        t.ul[
+                            [
+                                t.li[escape(f.metadata.get("filename"))]
+                                for f in file_objects
+                            ]
+                        ]
+                        if any(file_objects)
+                        else "No files"
+                    )
+                ]
+            ]
+
+        upload_id = str(
+            getattr(self, "uploadId", None)
+            or getattr(self, "upload_id", None)
+            or self.id
+            or self.name
+        )
+        uploads_arg = getattr(self, "uploads", None)
+        uploads_data = self._normalize_uploads(
+            file_objects=file_objects, uploads=uploads_arg
+        )
+        uploads_json = json.dumps(uploads_data)
+        input_class = "filepond " + theme.input_class(error=bool(self.error))
+
+        option_list = self.get_options()
+        category_options = []
+        if option_list:
+            for item in option_list:
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    category_options.append(
+                        {"value": str(item[0]), "label": str(item[1])}
+                    )
+                elif isinstance(item, dict):
+                    category_options.append(
+                        {
+                            "value": str(item.get("value", "")),
+                            "label": str(item.get("label", item.get("value", ""))),
+                        }
+                    )
+        category_options_json = json.dumps(category_options)
+
+        container_html = Markup(
+            """
+<div x-data='{ 
+    uploads: (%s).map((item) => ({
+        ...item,
+        selected: item.selected !== false,
+        description: item.description || "",
+        category: String(item.category || "")
+    })), 
+    fieldName: %s,
+    uploadId: %s,
+    categoryOptions: %s,
+
+    truncateFilename(filename, maxLength = 80) {
+        const name = String(filename || "");
+        if (name.length <= maxLength) return name;
+
+        const lastDot = name.lastIndexOf(".");
+        if (lastDot <= 0 || lastDot === name.length - 1) {
+            const head = Math.max(1, Math.floor((maxLength - 3) * 0.7));
+            const tail = Math.max(1, maxLength - 3 - head);
+            return name.slice(0, head) + "..." + name.slice(-tail);
+        }
+
+        const base = name.slice(0, lastDot);
+        const ext = name.slice(lastDot + 1);
+        const extWithDot = "." + ext;
+
+        const reserved = 3 + extWithDot.length;
+        const baseBudget = Math.max(2, maxLength - reserved);
+        if (base.length <= baseBudget) {
+            return base + extWithDot;
+        }
+
+        const tailBase = Math.min(8, Math.max(2, Math.floor(baseBudget * 0.35)));
+        const headBase = Math.max(1, baseBudget - tailBase);
+        return base.slice(0, headBase) + "..." + base.slice(-tailBase) + extWithDot;
+    },
+
+    addUploadedFile(file) {
+        const uploadedId = file.serverId || file.id;
+        const uploadedName = file.filename || (file.file && file.file.name) || uploadedId;
+        if (!uploadedId) return;
+
+        const exists = this.uploads.some((item) => item.id === uploadedId);
+        if (!exists) {
+            this.uploads.push({
+                id: uploadedId,
+                name: uploadedName,
+                selected: true,
+                description: "",
+                category: ""
+            });
+        }
+    },
+
+    initCategorySelections() {
+        if (!this.categoryOptions.length) return;
+
+        this.uploads = this.uploads.map((item) => {
+            const current = String(item.category || "");
+            if (!current) {
+                return { ...item, category: "" };
+            }
+
+            const byValue = this.categoryOptions.find(
+                (opt) => String(opt.value) === current
+            );
+            if (byValue) {
+                return { ...item, category: String(byValue.value) };
+            }
+
+            const byLabel = this.categoryOptions.find(
+                (opt) => String(opt.label) === current
+            );
+            if (byLabel) {
+                return { ...item, category: String(byLabel.value) };
+            }
+
+            return { ...item, category: "" };
+        });
+    },
+
+    initFilePond() {
+        const pond = FilePond.create(this.$refs.input, {
+            server: {
+                process: "/async-fileupload",
+                patch: "/async-fileupload/",
+                revert: null,
+                restore: null,
+                load: null,
+                fetch: null,
+            },
+            chunkUploads: true,
+            allowMultiple: true,
+            allowRevert: false,
+
+            onprocessfile: (error, file) => {
+                if (error) return;
+
+                this.addUploadedFile(file);
+
+                setTimeout(() => {
+                    pond.removeFile(file.id, { revert: false });
+                }, 500);
+            },
+
+            onprocessfiles: () => {
+                pond.getFiles().forEach((item) => {
+                    if (item.status === 5) {
+                        this.addUploadedFile(item);
+                    }
+                });
+
+                setTimeout(() => {
+                    pond.getFiles().forEach((item) => {
+                        if (item.status === 5) {
+                            pond.removeFile(item.id, { revert: false });
+                        }
+                    });
+                }, 500);
+            }
+        });
+    }
+}' x-init='initCategorySelections(); initFilePond()'>
+
+    <div :id='uploadId + "-list-container"' class='form-control-plaintext mb-2 space-y-2'>
+        <input type='hidden'
+             :name='fieldName + "-:fileupload:json:"'
+             :value='JSON.stringify(uploads.map((item) => ({ id: item.id, name: item.name, selected: item.selected !== false, description: item.description || "", category: item.category || "" })))'>
+        <div x-show='uploads.length === 0' class='text-body-secondary text-sm'>No files</div>
+        <template x-for='(file, index) in uploads' :key='index'>
+            <div class='d-flex align-items-start gap-2 mb-2'>
+                <input type='checkbox'
+                      :name='fieldName + "-:fileupload:item:"'
+                       :value='file.id'
+                       :id='"cb-" + uploadId + "-" + index'
+                      x-model='file.selected'>
+
+                <div class='flex-grow-1'>
+                    <label :for='"cb-" + uploadId + "-" + index' :title='file.name' x-text='truncateFilename(file.name)' :class='file.selected ? "text-sm d-block" : "text-sm d-block text-body-secondary opacity-50"'></label>
+
+                    <div class='d-flex gap-2 mt-1 align-items-center'>
+                        <input type='text' class='form-control form-control-sm flex-grow-1' placeholder='Description' x-model='file.description'>
+
+                        <select x-show='categoryOptions.length > 0' class='form-select form-select-sm w-auto' style='min-width: 12rem;' x-model='file.category'>
+                            <option value=''>Select category</option>
+                            <template x-for='option in categoryOptions' :key='option.value'>
+                                <option :value='String(option.value)' :selected='String(option.value) === String(file.category || "")' x-text='option.label'></option>
+                            </template>
+                        </select>
+                    </div>
+                </div>
+
+                <button type='button' @click='uploads.splice(index, 1)' class='text-red-500 text-xs'>
+                    Remove
+                </button>
+            </div>
+        </template>
+    </div>
+
+    <input type='file' x-ref='input' id='%s' name='%s' class='%s' placeholder='%s' style='%s' data-filepond-managed='alpine' multiple>
+
+</div>
+"""
+            % (
+                escape(uploads_json),
+                escape(json.dumps(self.name)),
+                escape(json.dumps(upload_id)),
+                escape(category_options_json),
+                escape(upload_id),
+                escape(self.name),
+                escape(input_class),
+                escape(self.placeholder or ""),
+                escape(self.input_style or ""),
+            )
+        )
+
+        return t.div(class_=theme.value_col(self.size))[
+            t.literal(container_html),
+            theme.error_feedback(self.error),
+        ]
 
 
 # EOF
