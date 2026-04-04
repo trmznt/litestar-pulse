@@ -6,6 +6,7 @@ from advanced_alchemy.types.file_object.backends.fsspec import FSSpecBackend
 
 STORAGE_DIR = pathlib.Path.cwd() / "storage/lp"
 TMP_UPLOAD_DIR = pathlib.Path.cwd() / "tmp_uploads"
+LP_STORAGE = "lp_storage"
 
 
 def init_filestorage() -> None:
@@ -18,7 +19,7 @@ def init_filestorage() -> None:
     storages.register_backend(
         FSSpecBackend(
             fs=local_fs,
-            key="lp_storage",
+            key=LP_STORAGE,
             # This prepends the path to every file saved via this backend
             prefix=STORAGE_DIR.as_posix(),
         )
