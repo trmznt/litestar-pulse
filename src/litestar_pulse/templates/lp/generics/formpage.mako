@@ -12,11 +12,13 @@ ${ content | n }
 ##
 <%def name="stylelinks()">
     <link href="https://cdn.jsdelivr.net/npm/tom-select@2.4.3/dist/css/tom-select.css" rel="stylesheet">
+    <link href="https://unpkg.com/filepond@^4/dist/filepond.css" rel="stylesheet">
 </%def>
 ##
 ##
 <%def name="anyscriptlinks()">
     <script src="https://cdn.jsdelivr.net/npm/tom-select@2.4.3/dist/js/tom-select.complete.min.js"></script>
+    <script src="https://unpkg.com/filepond@^4/dist/filepond.js"></script>
     <script src="/static/js/formutils.js"></script>
 </%def>
 ##
