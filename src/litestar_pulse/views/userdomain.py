@@ -37,10 +37,20 @@ class UserDomainForm(fb.ModelForm):
     only = None
 
     domain = fb.StringField(label="Domain", required=True, max_length=255)
-    desc = fb.StringField(label="Description", required=False, max_length=1024)
+    desc = fb.StringField(label="Description", required=True, max_length=1024)
     uuid = fb.UUIDField(label="UUID", required=False)
     domain_type_id = fb.EnumKeyField(
         label="Domain Type", required=True, foreignkey_for="domain_type"
+    )
+    credscheme = fb.YAMLField(label="Credential Scheme", required=True)
+    referer = fb.StringField(label="Referer", required=True, max_length=128)
+    autoadd = fb.CheckboxField(label="Auto Add", required=False)
+    attachment = fb.FileUploadField(
+        label="Attachment",
+        required=False,
+    )
+    files = fb.FilePondUploadField(
+        label="Files", required=False, categories=["General", "Contract"]
     )
 
     async def set_layout(self, controller: Any = None) -> t.htmltag:
@@ -52,6 +62,17 @@ class UserDomainForm(fb.ModelForm):
                 ],
                 self.desc.opts(offset=2, size=5),
                 self.domain_type_id.opts(offset=2),
+                f.CheckboxGroupInput(label="Options", offset=2)[self.autoadd.opts(),],
+                self.referer.opts(offset=2, size=5),
+                self.attachment.opts(
+                    offset=2,
+                    size=5,
+                    value=(
+                        controller.get_attachment_url(self.obj) if controller else None
+                    ),
+                ),
+                self.credscheme.opts(offset=2, size=5),
+                self.files.opts(offset=2, size=7),
             ]
         ]
         return form_layout
@@ -66,6 +87,9 @@ class UserDomainForm(fb.ModelForm):
                 raise fb.ParseFormError(
                     [(f"Domain '{domain}' already exists.", "domain")]
                 ) from error
+        if "NOT NULL" in detail or "NotNullViolation" in detail:
+            if "userdomains.uuid" in detail or "userdomains_uuid_key" in detail:
+                raise fb.ParseFormError([("UUID is required.", "uuid")]) from error
 
         super().process_integrity_error(error, data, dbsession)
 
