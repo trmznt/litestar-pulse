@@ -8,7 +8,7 @@ __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
 
 from litestar import Request, Response, MediaType
-from litestar.exceptions import NotFoundException
+from litestar.exceptions import NotFoundException, NotAuthorizedException
 from litestar.exceptions.responses import create_debug_response
 from litestar.status_codes import HTTP_500_INTERNAL_SERVER_ERROR
 
@@ -34,6 +34,28 @@ def handle_not_found(request: Request, exc: NotFoundException) -> Response:
     """
 
     return Response(content=html, status_code=404, media_type="text/html")
+
+
+def auth_exception_handler(request: Request, exc: NotAuthorizedException) -> Response:
+
+    html = """
+    <html>
+        <head>
+            <title>401 - Unauthorized</title>
+        </head>
+        <body>
+            <h1>Unauthorized</h1>
+            <p>{exc.detail or 'You are not authorized to access this resource.'}</p>
+            <p>URL: {request.url}</p>
+        </body>
+    </html>
+    """
+
+    return Response(
+        content=html,
+        status_code=exc.status_code,
+        media_type=MediaType.HTML,
+    )
 
 
 def mako_html_exception_handler(request: Request, exc: Exception) -> Response:
