@@ -78,3 +78,26 @@ function initRemoteAutocomplete(selector, url, csrfHeaderName) {
     });
 }
 
+// FilePond initialization for file uploads
+
+// Get a collection of elements with class filepond that are not Alpine-managed
+const fileinputElements = document.querySelectorAll('input.filepond:not([data-filepond-managed="alpine"])');
+
+// Loop over input elements
+Array.from(fileinputElements).forEach(fileinputElement => {
+    // Create a FilePond instance at the input element location
+    FilePond.create(fileinputElement,{
+        server: '/async-fileupload', // Your server endpoint for handling uploads
+        chunkUploads: true,
+        maxFileSize: '100MB',
+        // acceptedFileTypes: ['image/png', 'image/jpeg', 'application/pdf'],
+        // chunkForce: true, // Forces chunking even for small files
+        // headers: {
+            // Include CSRF token in the headers
+        //    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        // }
+    });
+});
+
+
+// EOF
