@@ -11,14 +11,14 @@ __license__ = "MPL-2.0"
 from html import escape
 from typing import Any
 from sqlalchemy import select
-from sqlalchemy.orm import object_session
+from sqlalchemy.orm import object_session, selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from litestar import Response, Request, get
 from litestar.response import Redirect
 from tagato import tags as t, formfields as f
 
 from litestar_pulse.lib import roles as r
-from litestar_pulse.db.models.account import Group, User
+from litestar_pulse.db.models.account import Group, User, UserGroup
 from .modelview import LPModelView, form_submit_bar
 from ..lib import validators as v
 
@@ -38,12 +38,20 @@ class GroupForm(fb.ModelForm):
     name = fb.StringField(label="Group Name", required=True, max_length=64)
     desc = fb.StringField(label="Description", required=False, max_length=256)
     uuid = fb.UUIDField(label="UUID", required=False)
+    roles = fb.TomSelectEnumKeyCollectionField(
+        label="Roles",
+        category_key="@ROLES",
+        required=False,
+    )
 
     async def set_layout(self, controller: Any = None) -> t.htmltag:
         form_layout = t.fragment(name="group-form")[
             f.fieldset(name="main")[
-                f.InlineInput()[self.name.opts(offset=2),],
+                f.InlineInput()[
+                    self.name.opts(offset=2, size=2), self.uuid.opts(offset=1, size=3)
+                ],
                 self.desc.opts(offset=2, size=5),
+                self.roles.opts(offset=2, size=5),
             ]
         ]
         return form_layout
@@ -83,6 +91,25 @@ class GroupView(LPModelView):
         for_listing indicates if the operation is for listing multiple instances.
         """
         options = super().augment_repo_options(for_listing=for_listing)
+        if for_listing:
+            # defer loading roles for listing to improve performance, as it is not needed for the table view
+            options.setdefault("load", []).extend(
+                [
+                    selectinload(Group.roles).defer("*"),
+                    selectinload(Group.usergroups)
+                    .selectinload(UserGroup.user)
+                    .defer("*"),
+                ]
+            )
+
+        # if not for_listing:
+        #    # For single instance operations, eager load roles
+        #    options.setdefault("load", []).extend(
+        #        [
+        #            selectinload(Group.roles),
+        #            selectinload(Group.usergroups).selectinload(UserGroup.user),
+        #        ]
+        #    )
         return options
 
     def generate_instance_table(
