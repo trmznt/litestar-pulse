@@ -247,8 +247,8 @@ class Validator:
     def transform(self, value: Any) -> Any:
 
         if self.fileupload:
-            # For file uploads, we return the raw value (e.g. FileStorage object) and
-            # defer processing to the file handling logic
+            # For file uploads, we return the raw value (e.g. FileStorage object or dict)
+            # and defer processing to the file handling logic
             return value
 
         if self.strip and isinstance(value, str):
@@ -613,6 +613,16 @@ def FileUpload(required: bool = False) -> Validator:
     return Validator(
         type=Any,
         required=required,
+        fileupload=True,
+    )
+
+
+def FileUploadList(required: bool = False) -> Validator:
+    """Helper function to create a File Upload List Validator."""
+    return Validator(
+        type=list,
+        required=required,
+        list_item_type=Any,
         fileupload=True,
     )
 
