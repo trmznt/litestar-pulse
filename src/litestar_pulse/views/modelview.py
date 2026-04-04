@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: MPL-2.0
 
 from __future__ import annotations
+import uuid
 
 __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
 
+import pathlib
 from typing import Any
 from uuid import UUID
 from enum import Enum
@@ -20,7 +22,7 @@ from markupsafe import Markup, escape
 from tagato import tags as t, formfields as f
 
 from litestar import Response, Request, get
-from litestar.response import Redirect
+from litestar.response import File, Redirect
 from litestar.plugins.flash import flash
 
 from ..lib.template import Template
@@ -129,18 +131,38 @@ class LPModelView(LPBaseView):
         """
         file_object = getattr(instance, "attachment", None)
         if file_object:
-            return t.a(
-                href=self.req.url_for(
-                    f"{self.model_type.__name__.lower()}-attachment", dbid=instance.id
-                )
-            )[
-                (
-                    file_object.metadata.get("filename")
-                    if file_object.metadata
-                    else "No original filename"
-                )
+            return t.fragment[
+                t.a(
+                    href=self.req.url_for(
+                        f"{self.model_type.__name__.lower()}-attachment",
+                        dbid=instance.id,
+                    ),
+                    target="_blank",
+                )[
+                    (
+                        file_object.metadata.get("filename")
+                        if file_object.metadata
+                        else "No original filename"
+                    )
+                ],
+                " ",
+                file_object.size,
             ]
         return None
+
+    async def attachment(self, dbid: int | None = None) -> File:
+        """
+        Render attachment page
+        """
+        instance = await self.get_model_instance(dbid=dbid)
+        file_object = getattr(instance, "attachment", None)
+        if file_object:
+            path = pathlib.Path(file_object.backend.prefix) / file_object.path
+            return File(
+                path=path,
+                filename=file_object.metadata.get("filename"),
+                content_disposition_type="inline",
+            )
 
     # main methods
 
@@ -208,7 +230,7 @@ class LPModelView(LPBaseView):
 
         instance = await self.get_model_instance(dbid=dbid, uuid=uuid)
         if hasattr(instance, "attachment"):
-            print(instance.attachment)
+            print("attachment:", instance.attachment)
 
         if instance is None:
             return dict(html="Instance not found", __status_code__=404)
@@ -271,6 +293,9 @@ class LPModelView(LPBaseView):
         """
         Handle the user domain update by ID or UUID
         """
+
+        # !!! raise here if to inspect normalized data
+        # raise RuntimeError(f"normalized data: {data}")
 
         if dbid is not None and dbid == 0:
             # create new instance
