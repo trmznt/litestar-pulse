@@ -7,10 +7,11 @@ __license__ = "LGPL v3 or later"
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from advanced_alchemy.extensions.litestar import SQLAlchemyDTO
+
 from litestar import Controller, delete, get, patch, post
 from litestar.dto import DTOConfig, DTOData
 from litestar.exceptions import NotFoundException
-from litestar.plugins.sqlalchemy import SQLAlchemyDTO
 
 # from litestar_pulse.lib.sqlalchemy_imports import SQLAlchemyDTO
 
