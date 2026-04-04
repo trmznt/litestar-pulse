@@ -3,14 +3,16 @@
 
 from __future__ import annotations
 
+import fastnanoid
+
 __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
 
 
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Self
-from datetime import date, datetime
+from typing import TYPE_CHECKING, Self, Any, Generic, TypeVar, get_args, Optional, Type
+from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 from functools import cached_property
 
@@ -31,12 +33,14 @@ from sqlalchemy.orm import (
 
 from advanced_alchemy.base import IdentityAuditBase
 from advanced_alchemy.mixins.sentinel import SentinelMixin
+from advanced_alchemy.types import FileObject, FileObjectList, StoredObject
 
 from litestar_pulse.lib import roles as r
 
 if TYPE_CHECKING:
     from .account import User
 
+T = TypeVar("T")
 
 _current_userid: ContextVar[int | None] = ContextVar("_current_userid", default=None)
 
@@ -108,6 +112,49 @@ class UpdatedByColumn:
     @cached_property
     def updated_by_login(self) -> str:
         return self.updated_by.login if self.updated_by else "-"
+
+
+def AttachedFiles(storage_backend: str) -> Type:
+
+    @declarative_mixin
+    class _AttachedFiles:
+
+        __storage_backend__ = storage_backend
+
+        files: Mapped[Optional[FileObjectList]] = mapped_column(
+            StoredObject(backend=storage_backend, multiple=True), nullable=True
+        )
+
+        @classmethod
+        def get_storage_backend(cls) -> str:
+            return cls.__storage_backend__
+
+        def get_fileobject_storage_path(self, filename: str = "") -> str:
+            # generate a file path for the given uuid using the first 2 characters as subdirectories
+            class_name = self.__class__.__name__.lower()
+            uuid = str(self.uuid)
+            filename = filename or (fastnanoid.generate(size=8) + "-db")
+            return f"{class_name}/{uuid[-2:]}/{uuid[2:4]}/{uuid}/{filename}", filename
+
+        def set_fileobject_metadata(
+            self,
+            filename: str,  # original filename
+            content_type: str,  # http content type
+            category: str = "",  # category tag
+            description: str = "",  # description of the file
+            updated_by_id: int = 0,  # user id of the updater, for now set to 0
+            updated_at: int = 0,  # timestamp of the update as integer epoch UTC
+        ) -> dict[str, str]:
+            return dict(
+                filename=filename,
+                content_type=content_type,
+                category=category,
+                description=description,
+                updated_by_id=updated_by_id,
+                updated_at=updated_at or int(datetime.now(timezone.utc).timestamp()),
+            )
+
+    return _AttachedFiles
 
 
 @declarative_mixin
