@@ -43,14 +43,24 @@ from sqlalchemy.ext.hybrid import hybrid_property
 
 from advanced_alchemy.base import orm_registry
 from advanced_alchemy.types import JsonB
+from advanced_alchemy.types.file_object import FileObject, StoredObject, FileObjectList
 
 from ...lib import roles as r
 from ...lib import crypt
 from .enumkey import EnumKey, enumkey_proxy
-from .coremixins import IdentityUUIDv7UserAuditBase, IdentityUserAuditBase, RoleMixin
+from .coremixins import (
+    IdentityUUIDv7UserAuditBase,
+    IdentityUserAuditBase,
+    RoleMixin,
+    AttachedFiles,
+)
+from ...config.filestorage import LP_STORAGE
 
 if TYPE_CHECKING:  # pragma: no cover - typing helpers only
     pass
+
+
+LPAttachedFiles = AttachedFiles(LP_STORAGE)
 
 
 def _create_user_group(user: "User", role: str = "M") -> "UserGroup":
@@ -59,7 +69,7 @@ def _create_user_group(user: "User", role: str = "M") -> "UserGroup":
     return UserGroup(user=user, role=role)
 
 
-class UserDomain(IdentityUUIDv7UserAuditBase, RoleMixin):
+class UserDomain(IdentityUUIDv7UserAuditBase, LPAttachedFiles, RoleMixin):
     __tablename__ = "userdomains"
 
     __managing_roles__ = RoleMixin.__managing_roles__ | {r.USERDOMAIN_MANAGE}
@@ -100,6 +110,10 @@ class UserDomain(IdentityUUIDv7UserAuditBase, RoleMixin):
         index=True,
     )
     domain_type = enumkey_proxy("domain_type_id", "@USERDOMAIN_TYPE")
+
+    attachment: Mapped[FileObject | None] = mapped_column(
+        StoredObject(backend=LP_STORAGE), nullable=True
+    )
 
     def __repr__(self) -> str:
         return f"<UserDomain id={self.id} domain={self.domain}>"
