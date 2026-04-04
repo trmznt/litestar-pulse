@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import exc
 
 from advanced_alchemy.exceptions import IntegrityError
-from advanced_alchemy.types.file_object import FileObject, storages
+from advanced_alchemy.types.file_object import FileObject, storages, FileObjectList
 
 from litestar import Request
 
@@ -41,7 +41,7 @@ from ..db.models.enumkey import EnumKeyRegistry
 # InputField():
 # ._name = field name set by __set_name__
 # ._owner = <ModelForm> subclass where this field is declared
-# ._forminput = tagato.BaseInput()
+# ._forminput = tagato.BaseInput() -> warning! this might be incorrect!
 #
 # _InputFieldProxy():
 # .owner_instance = ModelForm() instance this proxy is bound to
@@ -304,6 +304,64 @@ class _FileUploadFieldProxy(_InputFieldProxy):
         return None
 
 
+class _MultipleFileUploadFieldProxy(_InputFieldProxy):
+    """Proxy for MultipleFileUploadField — handles multiple file uploads."""
+
+    def get_value(self) -> Any:
+        """Override to return the list of uploaded file objects instead of form data."""
+        obj = getattr(self.owner_instance, "obj", None)
+        data = getattr(self.owner_instance, "data")
+
+        if self.name in data:
+            # the data dictionary has the uploaded file objects from the request
+            return data[self.name]  # this should be a list of uploaded file objects
+
+        if obj is not None:
+            file_objects: FileObjectList = getattr(obj, self.name, None)
+            return file_objects
+        return None
+
+
+class _FilePondFieldProxy(_InputFieldProxy):
+    """Proxy for FilePondField — handles file upload validation and transformation."""
+
+    def get_value(self) -> Any:
+        """
+        Override to return the uploaded file object instead of form data.
+        Form data is expected to have a field of {self.name}-selected-json
+        which is a JSON string representing a list of selected file objects
+        with 'id' and 'name' keys.
+        """
+
+        # get the instance object and the form data
+        obj = getattr(self.owner_instance, "obj", None)
+        data = getattr(self.owner_instance, "data")
+
+        if self.name in data:
+            # the data dictionary has the uploaded file object from the request
+            # we need to combine this with the one in the instance itself.
+            if f"{self.name}-:fileupload:json:" in data:
+                # this should be the JSON string of selected file objects
+                return data[f"{self.name}-:fileupload:json:"]
+
+            # we need to access the JSON string from the form data, which should be in the format of {self.name}-selected-json
+            return data[self.name]
+
+        if obj is not None:
+            file_objects: FileObjectList = getattr(obj, self.name, [])
+            return file_objects
+
+        return []
+
+    def get_options(self) -> list[tuple[str, str]]:
+        """
+        Override to provide options for the FilePond input.
+        This is to get the InputField's categories and use them as options for
+        the FilePond input.
+        """
+        return self.input_field.categories
+
+
 @dataclass
 class InputField:
     """Descriptor that combines a Validator with a form input widget.
@@ -348,9 +406,8 @@ class InputField:
         that ModelForm.validate / .update can iterate over all declared fields.
         """
         self._name = name  # name of the field
-        self._owner = (
-            owner  # usually the ModelForm subclass where this field is declared
-        )
+        # owner is usually the ModelForm subclass where this field is declared
+        self._owner = owner
 
         if self._FIELD_LIST_ATTR not in owner.__dict__:
             setattr(owner, self._FIELD_LIST_ATTR, [])
@@ -391,6 +448,8 @@ class InputField:
 
     @cached_property
     def _forminput(self) -> f.BaseInput:
+        raise RuntimeError("this should not be executed")
+        print(f"Creating form input for field: {self!r}")
         return self.forminput(label=self.label, input_provider=self)
 
     async def async_prerender(
@@ -949,6 +1008,29 @@ class FileUploadField(InputField):
         )
 
 
+class MultipleFileUploadField(InputField):
+    """File input field for uploading multiple files."""
+
+    def __init__(
+        self,
+        label: str,
+        required: bool = False,
+        validator: v.Validator = v.FileUploadList,
+        forminput: f.FormField = ct.MultipleFileInput,
+        **kwargs: Any,
+    ) -> None:
+        _validator = validator(
+            required=required,
+            **kwargs,
+        )
+        super().__init__(
+            label=label,
+            validator=_validator,
+            forminput=forminput,
+            proxy_class=_MultipleFileUploadFieldProxy,
+        )
+
+
 class PreUploadFileField(InputField):
     """File input field for uploading files."""
 
@@ -980,7 +1062,8 @@ class FilePondUploadField(InputField):
         label: str,
         required: bool = False,
         validator: v.Validator = v.FileUpload,
-        forminput: f.FormField = lambda **kwargs: f.FileInput(multiple=True, **kwargs),
+        forminput: f.FormField = ct.FilePondInput,
+        categories: set[str] | None = None,
         filepond_options: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -992,9 +1075,13 @@ class FilePondUploadField(InputField):
             label=label,
             validator=_validator,
             forminput=forminput,
-            proxy_class=_FileUploadFieldProxy,
+            proxy_class=_FilePondFieldProxy,
         )
         self.filepond_options = filepond_options or {}
+        # print(dir(self))
+        # field = self._forminput
+        # raise
+        self.categories = [(o, o) for o in categories] if categories else None
 
 
 # ------------------
@@ -1128,8 +1215,10 @@ class ModelForm:
         Attribute ATTR-remove-if-false!flag is used to indicate that ATTR should be removed
         from transformed_data if the ATTR is false (None, empty string, empty list, etc.)
         in the submitted data.
-        For example, file uploads with an empty value indicates that
-        the existing file should be retained .
+        For example, file uploads with an empty value indicates that the existing file should be retained.
+
+        TODO:
+        - need to handle list of fileobjects, so probably merging those in the data dict and obj
 
         :param obj: the current database object (passed to validators for context-aware transformations)
         :param data: the submitted form data dict
@@ -1201,32 +1290,6 @@ class ModelForm:
 
         except IntegrityError as e:
             self.process_integrity_error(e.__cause__, data, dbhandler.session)
-
-        except Exception:
-            raise
-
-        return
-
-        if object_session(obj) is None:
-            raise ValueError("Object is not attached to a session")
-
-        await self.before_update(obj, data, dbsession)
-
-        for field_name in self.__fields__:
-            if not hasattr(self, field_name):
-                continue
-            if field_name not in data:
-                # Field was not submitted — skip (partial update)
-                continue
-            value = data.get(field_name)
-            setattr(obj, field_name, value)
-
-        # Flush to persist changes and catch constraint violations
-        try:
-            await dbsession.flush()
-
-        except exc.IntegrityError as e:
-            self.process_integrity_error(e, data, dbsession)
 
         except Exception:
             raise
@@ -1360,24 +1423,6 @@ class ModelForm:
             javascript_code="\n".join(self.jscode),
             pyscript_code="\n".join(self.pyscode),
             scriptlink_lines="\n".join(self.scriptlinks),
-        )
-
-        return dict(
-            html=t.fragment()[
-                self.header(),
-                t.hr,
-                form,
-            ],
-            javascript_code="\n".join(self.jscode),
-            pyscript_code="\n".join(self.pyscode),
-            scriptlinks="\n".join(self.scriptlinks),
-        )
-
-        return dict(
-            html=fragments,
-            javascript_code="\n".join(jscode),
-            pyscript_code="\n".join(pyscode),
-            scriptlink_lines="\n".join(scriptlinks),
         )
 
     def header(self) -> t.htmltag:
