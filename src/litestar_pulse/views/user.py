@@ -49,7 +49,7 @@ class UserForm(fb.ModelForm):
     email = fb.EmailField(label="Email", required=True, max_length=48)
     lastname = fb.StringField(label="Last Name", required=True, max_length=64)
     firstname = fb.StringField(label="First Name", required=True, max_length=64)
-    institution = fb.StringField(label="Institution", required=False, max_length=128)
+    institution = fb.StringField(label="Institution", required=True, max_length=128)
     uuid = fb.UUIDField(label="UUID", required=False)
     primarygroup_id = fb.ForeignKeyField(
         label="Primary Group",
@@ -77,7 +77,13 @@ class UserForm(fb.ModelForm):
                 ],
                 self.institution.opts(offset=2, size=5),
                 self.primarygroup_id.opts(offset=2, size=3),
-                self.attachment.opts(offset=2, size=5),
+                self.attachment.opts(
+                    offset=2,
+                    size=5,
+                    value=(
+                        controller.get_attachment_url(self.obj) if controller else None
+                    ),
+                ),
             ],
         ]
         return form_layout

@@ -45,10 +45,6 @@ class UserDomainForm(fb.ModelForm):
     credscheme = fb.YAMLField(label="Credential Scheme", required=True)
     referer = fb.StringField(label="Referer", required=True, max_length=128)
     autoadd = fb.CheckboxField(label="Auto Add", required=False)
-    attachment = fb.FileUploadField(
-        label="Attachment",
-        required=False,
-    )
     files = fb.FilePondUploadField(
         label="Files", required=False, categories=["General", "Contract"]
     )
@@ -64,15 +60,16 @@ class UserDomainForm(fb.ModelForm):
                 self.domain_type_id.opts(offset=2),
                 f.CheckboxGroupInput(label="Options", offset=2)[self.autoadd.opts(),],
                 self.referer.opts(offset=2, size=5),
-                self.attachment.opts(
+                self.credscheme.opts(offset=2, size=5),
+                self.files.opts(
                     offset=2,
-                    size=5,
-                    value=(
-                        controller.get_attachment_url(self.obj) if controller else None
+                    size=7,
+                    url_for=(
+                        (lambda filekey: controller.get_files_url(filekey, self.obj))
+                        if controller
+                        else None
                     ),
                 ),
-                self.credscheme.opts(offset=2, size=5),
-                self.files.opts(offset=2, size=7),
             ]
         ]
         return form_layout
