@@ -53,6 +53,7 @@ from .coremixins import (
     IdentityUserAuditBase,
     RoleMixin,
     AttachedFiles,
+    Attachment,
 )
 from ...config.filestorage import LP_STORAGE
 
@@ -61,6 +62,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing helpers only
 
 
 LPAttachedFiles = AttachedFiles(LP_STORAGE)
+LPAttachment = Attachment(LP_STORAGE)
 
 
 def _create_user_group(user: "User", role: str = "M") -> "UserGroup":
@@ -110,10 +112,6 @@ class UserDomain(IdentityUUIDv7UserAuditBase, LPAttachedFiles, RoleMixin):
         index=True,
     )
     domain_type = enumkey_proxy("domain_type_id", "@USERDOMAIN_TYPE")
-
-    attachment: Mapped[FileObject | None] = mapped_column(
-        StoredObject(backend=LP_STORAGE), nullable=True
-    )
 
     def __repr__(self) -> str:
         return f"<UserDomain id={self.id} domain={self.domain}>"
@@ -184,7 +182,7 @@ class UserGroup(IdentityUserAuditBase, RoleMixin):
     )
 
 
-class User(IdentityUUIDv7UserAuditBase, RoleMixin):
+class User(IdentityUUIDv7UserAuditBase, LPAttachment, RoleMixin):
     __tablename__ = "users"
 
     __managing_roles__ = RoleMixin.__managing_roles__ | {r.USER_MANAGE}
@@ -318,7 +316,7 @@ groups_roles = Table(
 )
 
 
-class Group(IdentityUUIDv7UserAuditBase, RoleMixin):
+class Group(IdentityUUIDv7UserAuditBase, LPAttachedFiles, RoleMixin):
 
     __tablename__ = "groups"
 
