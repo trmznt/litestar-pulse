@@ -1,42 +1,162 @@
 /*
 This is for fixing some conflict with the CSS from third-party libraries
+
+Sections:
+1) TomSelect tokens
+2) TomSelect layout/alignment
+3) TomSelect tags and state handling
+4) TomSelect dropdown states
+5) FilePond
 */
 
 /*
-Tom-Select
+TomSelect tokens
 */
 
-/* 1. Sync rounding with Bootstrap 5.3's 0.375rem (var(--bs-border-radius)) */
+.ts-wrapper {
+    /* Global tag palette for easy tuning in one place */
+    --lp-ts-tag-bg: var(--bs-success-bg-subtle);
+    --lp-ts-tag-text: var(--bs-success-text-emphasis);
+    --lp-ts-tag-border: var(--bs-success-border-subtle);
+
+    /* Stronger active feedback for clicked/focused tags */
+    --lp-ts-tag-active-bg: color-mix(in srgb, var(--lp-ts-tag-bg) 70%, var(--bs-success) 30%);
+    --lp-ts-tag-active-border: color-mix(in srgb, var(--lp-ts-tag-border) 70%, var(--bs-success) 30%);
+
+    /* Hover and dropdown accents */
+    --lp-ts-tag-hover-bg: color-mix(in srgb, var(--lp-ts-tag-bg) 86%, var(--bs-success) 14%);
+    --lp-ts-option-active-bg: color-mix(in srgb, var(--bs-success) 14%, white 86%);
+}
+
+/*
+TomSelect layout and Bootstrap alignment
+*/
+
+/* Base control radius: keep in sync with Bootstrap inputs */
 .ts-control {
     border-radius: var(--bs-border-radius) !important;
 }
 
-/* 2. Fix rounding inside an .input-group */
-/* If it's the first element in the group, remove right-side rounding */
+/* Input-group first: remove right radius for seamless join */
 .input-group > .ts-wrapper:first-child .ts-control {
     border-top-right-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
 }
 
-/* If it's the last element, remove left-side rounding */
+/* Input-group last: remove left radius for seamless join */
 .input-group > .ts-wrapper:last-child .ts-control {
     border-top-left-radius: 0 !important;
     border-bottom-left-radius: 0 !important;
 }
 
-/* If it's in the middle, remove all rounding */
+/* Input-group middle: remove all radius */
 .input-group > .ts-wrapper:not(:first-child):not(:last-child) .ts-control {
     border-radius: 0 !important;
 }
 
-/* 3. Fix Floating Label alignment and font-size */
+/* Floating labels: keep wrapper full height */
 .form-floating > .ts-wrapper {
     height: 100%; /* Ensure it fills the floating container */
 }
 
+/* Floating labels: push value text below the floating label */
 .form-floating > .ts-wrapper .ts-control {
     padding-top: 1.625rem !important; /* Push text down so label doesn't overlap */
     padding-bottom: 0.625rem !important;
+}
+
+/*
+TomSelect tags and state handling
+
+Note: !important is intentionally used where TomSelect/Bootstrap defaults
+compete with these overrides in readonly/disabled and active states.
+*/
+
+/* Selected tags: subtle success palette */
+.ts-wrapper.multi .ts-control .item {
+    background-color: var(--lp-ts-tag-bg);
+    color: var(--lp-ts-tag-text);
+    border: 1px solid var(--lp-ts-tag-border);
+}
+
+/* Hovered tags: slightly stronger success tint */
+.ts-wrapper.multi .ts-control .item:hover {
+    background-color: var(--lp-ts-tag-hover-bg);
+    color: var(--lp-ts-tag-text);
+}
+
+/* Active/clicked tags: stronger highlight for interaction feedback */
+.ts-wrapper.multi .ts-control .item.active,
+.ts-wrapper.multi .ts-control .item:active,
+.ts-wrapper.multi .ts-control > div[data-value].active {
+    background-color: var(--lp-ts-tag-active-bg) !important;
+    border-color: var(--lp-ts-tag-active-border) !important;
+    color: var(--lp-ts-tag-text) !important;
+}
+
+/* Readonly/disabled tags: keep same appearance as normal selected tags */
+.ts-wrapper.multi.has-items:is(.disabled, .locked, .readonly) .ts-control > div[data-value],
+.ts-wrapper.multi.has-items .ts-control > div[data-value][data-disabled] {
+    background-color: var(--lp-ts-tag-bg) !important;
+    color: var(--lp-ts-tag-text) !important;
+    border: 1px solid var(--lp-ts-tag-border) !important;
+}
+
+/* Readonly/disabled control surface: remove grey fade behind tags */
+.ts-wrapper.multi:is(.disabled, .locked, .readonly) .ts-control,
+.ts-wrapper.form-control-disabled .ts-control {
+    background-color: var(--bs-body-bg) !important;
+    opacity: 1 !important;
+}
+
+/*
+TomSelect: dropdown option states
+*/
+
+/* Default option colors */
+.ts-dropdown .option {
+    color: #303030;
+    background-color: white;
+}
+
+/* Hovered/keyboard-focused option */
+.ts-dropdown .option.active {
+    background-color: var(--lp-ts-option-active-bg);
+    color: var(--lp-ts-tag-text);
+}
+
+/* Selected option */
+.ts-dropdown .option.selected,
+.ts-dropdown .option[aria-selected="true"] {
+    background-color: var(--lp-ts-tag-bg);
+    color: var(--lp-ts-tag-text);
+}
+
+
+/*
+FilePond tokens and overrides
+*/
+
+.filepond--root {
+    /* Keep these as the primary knobs for compact uploader sizing */
+    --lp-fp-height: 2.75em;
+    --lp-fp-label-font-size: 0.75rem;
+
+    --filepond-panel-height: var(--lp-fp-height);
+    --filepond-drop-label-min-height: var(--lp-fp-height);
+}
+
+.filepond--panel-root {
+    min-height: var(--lp-fp-height);
+}
+
+.filepond--drop-label {
+    font-size: var(--lp-fp-label-font-size);
+}
+
+.filepond--drop-label label {
+    font-size: var(--lp-fp-label-font-size) !important;
+    line-height: 1.2;
 }
 
 /*
