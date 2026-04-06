@@ -27,11 +27,9 @@ from sqlalchemy.orm.attributes import flag_modified
 from advanced_alchemy.repository import SQLAlchemyAsyncRepository
 from advanced_alchemy.service import SQLAlchemyAsyncRepositoryService
 from advanced_alchemy.types.file_object import FileObject, FileObjectList
+from advanced_alchemy.extensions.litestar import SQLAlchemyDTO
 
 from litestar.dto import DTOConfig
-from litestar.plugins.sqlalchemy import SQLAlchemyDTO
-
-# from litestar_pulse.lib.sqlalchemy_imports import SQLAlchemyDTO
 
 from . import set_handler_class, handler_factory, get_handler
 from .models.meta import LPAsyncSession
@@ -154,7 +152,36 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
             # update instance attributes from data dict
             # handle MutableList fields with in-place mutation to ensure
             # SQLAlchemy change tracking works correctly
+            mapper_relationships = inspect(instance).mapper.relationships
             for key, value in data.items():
+                if not hasattr(instance, key):
+                    # Allow hook-produced auxiliary keys without breaking updates
+                    # for models that don't expose that attribute.
+                    continue
+
+                relationship = mapper_relationships.get(key)
+                if (
+                    relationship is not None
+                    and relationship.uselist
+                    and isinstance(value, list)
+                ):
+                    if not value:
+                        relation_collection = getattr(instance, key)
+                        relation_collection[:] = []
+                        continue
+
+                    if all(hasattr(item, "id") for item in value):
+                        related_ids = self.normalize_unique_int_ids(
+                            [getattr(item, "id") for item in value]
+                        )
+                        await self.reconcile_relation_collection_by_ids(
+                            instance=instance,
+                            attr_name=key,
+                            related_model=relationship.mapper.class_,
+                            related_ids=related_ids,
+                        )
+                        continue
+
                 field = getattr(instance, key)
                 if isinstance(field, MutableList):
                     field[:] = value
@@ -173,6 +200,76 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
             await self.repository.update(instance)
 
         return instance
+
+    def normalize_unique_int_ids(self, raw_ids: Any) -> list[int]:
+        """Normalize scalar/list ids to unique integer ids while preserving order."""
+
+        if raw_ids in (None, ""):
+            return []
+        if not isinstance(raw_ids, list):
+            raw_ids = [raw_ids]
+
+        normalized_ids: list[int] = []
+        seen_ids: set[int] = set()
+        for raw_id in raw_ids:
+            if raw_id in (None, ""):
+                continue
+            normalized_id = int(raw_id)
+            if normalized_id not in seen_ids:
+                seen_ids.add(normalized_id)
+                normalized_ids.append(normalized_id)
+        return normalized_ids
+
+    async def reconcile_relation_collection_by_ids(
+        self,
+        instance: Any,
+        attr_name: str,
+        related_model: type[DeclarativeBase],
+        related_ids: list[int],
+        valid_ids: set[int] | None = None,
+    ) -> None:
+        """Reconcile a relationship collection using session-local related objects.
+
+        This avoids duplicate association inserts that can happen when assigning
+        relationship values resolved from a different session/identity map.
+        """
+
+        if valid_ids is not None:
+            invalid_ids = set(related_ids) - valid_ids
+            if invalid_ids:
+                raise ValueError(
+                    f"One or more invalid IDs provided for {attr_name}: {invalid_ids}"
+                )
+
+        current_items = list(await getattr(instance.awaitable_attrs, attr_name))
+        current_by_id = {item.id: item for item in current_items}
+
+        missing_ids = [
+            item_id for item_id in related_ids if item_id not in current_by_id
+        ]
+        missing_by_id: dict[int, Any] = {}
+        if missing_ids:
+            result = await self.repository.session.scalars(
+                select(related_model).where(related_model.id.in_(missing_ids))
+            )
+            missing_items = result.all()
+            missing_by_id = {item.id: item for item in missing_items}
+
+        unresolved_ids = [
+            item_id for item_id in missing_ids if item_id not in missing_by_id
+        ]
+        if unresolved_ids:
+            raise ValueError(
+                f"One or more IDs not found for {attr_name}: {set(unresolved_ids)}"
+            )
+
+        reconciled_items = [
+            current_by_id.get(item_id) or missing_by_id[item_id]
+            for item_id in related_ids
+        ]
+
+        relation_collection = getattr(instance, attr_name)
+        relation_collection[:] = reconciled_items
 
     # generic file upload handling methods that can be used by inherited services
 
@@ -293,6 +390,10 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
         # set the file attachment on the instance, ensuring the relationship is properly tracked for cleanup
 
         if attr_name in data:
+            if not hasattr(instance, attr_name):
+                data.pop(attr_name, None)
+                return
+
             # Ensure the previous value is loaded so SQLAlchemy tracks it in
             # `history.deleted` when attachment is replaced/cleared. The
             # FileObject listener relies on that history for auto-cleanup.
@@ -403,9 +504,6 @@ class UserDomainService(LPBaseService[account.UserDomain]):
         self, instance: account.UserDomain, data: dict
     ) -> None:
 
-        if "attachment" in data:
-            await self.set_file_object(instance, "attachment", data)
-
         if "files" in data:
             await self.update_fileobject_list(instance, "files", data)
 
@@ -424,23 +522,19 @@ class GroupService(LPBaseService[account.Group]):
         """
 
         if "roles" in data:
-            role_ids = data["roles"]
-            # Convert role IDs to EnumKey instances
-            roles = []
-
-            # check that all role IDs are under ROLES category
+            role_ids = self.normalize_unique_int_ids(data["roles"])
             enumkeys = enumkey.EnumKeyRegistry.get_all_items("@ROLES")
-            valid_role_ids = {ek[0] for ek in enumkeys}
-            if any(role_id_diff := set(role_ids) - valid_role_ids):
-                raise ValueError(
-                    f"One or more invalid role IDs provided: {role_id_diff}"
-                )
+            valid_role_ids = {int(ek[0]) for ek in enumkeys}
 
-            roles = await get_handler().repo.EnumKey.list(
-                enumkey.EnumKey.id.in_(role_ids)
+            await self.reconcile_relation_collection_by_ids(
+                instance=instance,
+                attr_name="roles",
+                related_model=enumkey.EnumKey,
+                related_ids=role_ids,
+                valid_ids=valid_role_ids,
             )
 
-            data["roles"] = roles
+            data.pop("roles", None)
 
 
 class UserService(LPBaseService[account.User]):
@@ -462,9 +556,7 @@ class UserService(LPBaseService[account.User]):
                     )
 
         if "attachment" in data:
-            file_attachment = data["attachment"]
-            if file_attachment:
-                data["attachment"] = await self.create_file_object(file_attachment)
+            await self.set_file_object(instance, "attachment", data)
 
 
 class FileAttachmentService(LPBaseService[fileobjects.FileAttachment]):
