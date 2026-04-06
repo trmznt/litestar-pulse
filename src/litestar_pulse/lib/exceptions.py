@@ -43,7 +43,7 @@ def auth_exception_handler(request: Request, exc: NotAuthorizedException) -> Res
         <head>
             <title>401 - Unauthorized</title>
         </head>
-        <body>
+        <body id="body-layout">
             <h1>Unauthorized</h1>
             <p>{exc.detail or 'You are not authorized to access this resource.'}</p>
             <p>URL: {request.url}</p>
