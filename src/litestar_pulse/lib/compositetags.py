@@ -293,16 +293,42 @@ class MultipleFileInput(f.BaseInput):
         ]
 
 
+def render_fileobject_label(file_obj: Any, url_for: callable[[str], str]) -> t.Tag:
+    filename, description, category = (
+        (
+            file_obj.metadata.get("filename"),
+            file_obj.metadata.get("description", ""),
+            file_obj.metadata.get("category", ""),
+        )
+        if hasattr(file_obj, "metadata")
+        else (str(file_obj), "", "")
+    )
+    file_url = url_for(file_obj.filename) if hasattr(file_obj, "filename") else "#"
+    return t.fragment[
+        t.a(href=file_url, target="_blank")[escape(filename)],
+        t.div[
+            category and t.span["[", escape(category), "] "],
+            description and t.span[escape(description)],
+        ],
+    ]
+
+
+def render_fileobject_list(
+    fileobject_list: list[Any], url_for: callable[str, str]
+) -> t.Tag | str:
+
+    if not any(fileobject_list):
+        return "No files"
+
+    html = t.ul[[t.li[render_fileobject_label(f, url_for)] for f in fileobject_list]]
+
+    return html
+
+
 class FilePondInput(f.BaseInput):
     """
     A custom form input for handling advanced-alchemy FileObjectList directly.
     """
-
-    def opts_xxx(self, **kwargs):
-        self.options = kwargs.pop("options", {})
-        print("FilePondInput options:", self.options)
-        raise
-        return super().opts(**kwargs)
 
     @staticmethod
     def _normalize_uploads(
@@ -372,19 +398,17 @@ class FilePondInput(f.BaseInput):
         file_objects = (value if value is not None else self.get_value()) or []
 
         if readonly:
+
+            url_for = (
+                self.input_provider.url_for
+                if self.input_provider
+                else lambda filekey: "/"
+            )
+
             # Show the filename as plain text in readonly mode (no input)
             return t.div(class_=theme.value_col(self.size))[
                 t.div(class_="form-control-plaintext")[
-                    (
-                        t.ul[
-                            [
-                                t.li[escape(f.metadata.get("filename"))]
-                                for f in file_objects
-                            ]
-                        ]
-                        if any(file_objects)
-                        else "No files"
-                    )
+                    render_fileobject_list(file_objects, url_for)
                 ]
             ]
 
@@ -420,13 +444,13 @@ class FilePondInput(f.BaseInput):
 
         container_html = Markup(
             """
-<div x-data='{ 
+<div x-data='{
     uploads: (%s).map((item) => ({
         ...item,
         selected: item.selected !== false,
         description: item.description || "",
         category: String(item.category || "")
-    })), 
+    })),
     fieldName: %s,
     uploadId: %s,
     categoryOptions: %s,
