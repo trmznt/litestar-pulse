@@ -17,7 +17,6 @@ from litestar import Controller, Response, get, Request, MediaType
 
 from litestar_pulse.views.baseview import LPController
 from litestar_pulse.lib.template import Template
-from litestar_pulse.templates.pages_b53 import base
 
 
 class HomeView(LPController):
@@ -45,10 +44,6 @@ class HomeView(LPController):
         ]
 
         return {"title": "Litestar Pulse Library", "html": content}
-
-        return Template(template_name="lp_base.mako", content={"body": str(content)})
-
-        return base(title="Litestar Pulse Library", content=content)
 
     @get(name="index")
     async def index_html(
