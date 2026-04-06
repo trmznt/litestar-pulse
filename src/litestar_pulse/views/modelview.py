@@ -4,6 +4,8 @@
 from __future__ import annotations
 import uuid
 
+from litestar.exceptions import HTTPException
+
 __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
@@ -24,6 +26,7 @@ from tagato import tags as t, formfields as f
 from litestar import Response, Request, get
 from litestar.response import File, Redirect
 from litestar.plugins.flash import flash
+from litestar.exceptions import NotFoundException, NotAuthorizedException
 
 from ..lib.template import Template
 from ..lib.validators import Validator
@@ -164,6 +167,59 @@ class LPModelView(LPBaseView):
                 content_disposition_type="inline",
             )
 
+    def get_files_url(self, filekey: str, instance: Any) -> str:
+        """
+        Get the URL for the given file key, which can be used by
+        the FileUploadField to upload files.
+        This method should be overridden by the subclass to provide
+        the correct implementation of generating the file URL based
+        on the file key if it differs from the default implementation.
+        The file key can be used to identify the file in the backend
+        storage and map it to the corresponding model instance and field.
+        """
+        return self.req.url_for(
+            f"{self.model_type.__name__.lower()}-files",
+            dbid=getattr(instance, "id", None),
+            fname=filekey.rsplit("/", 1)[1] if "/" in filekey else filekey,
+        )
+
+    async def files(self, dbid: int | None = None, fname: str | None = None) -> File:
+        """Render file page
+        - dbid and fname can be used to locate the file to be rendered
+        - the file can be located in the filesystem or in the database as blob
+        - the file can be rendered using File response with appropriate media type
+        - if the file is not found, return 404 response
+        - if the user is not authorized to access the file, return 403 response
+        - if there is an error while processing the request, return 500 response
+        - this method should be overridden by the subclass to provide the correct
+          implementation of locating and rendering the file if differing from
+          default implementation
+        - this method can also be used to perform any necessary authorization checks
+          before rendering the file
+        - this method can also be used to perform any necessary logging before
+          rendering the file
+        - this method should return a File response with appropriate media type
+          if the file is found and accessible, or raise an appropriate exception
+          if not
+        """
+
+        instance = await self.get_model_instance_with_check(dbid=dbid)
+        fileobjectlist = getattr(instance, "files", None)
+        if fileobjectlist is None:
+            raise NotFoundException("No files associated with this instance")
+        file_object = next((f for f in fileobjectlist if f.path.endswith(fname)), None)
+        if not file_object:
+            raise NotFoundException("File not found")
+
+        path = pathlib.Path(file_object.backend.prefix) / file_object.path
+        return File(
+            path=path,
+            filename=file_object.metadata.get("filename"),
+            content_disposition_type="inline",
+        )
+
+        # perform authorization check if necessary
+
     # main methods
 
     def get_repository(self) -> Any:
@@ -196,6 +252,8 @@ class LPModelView(LPBaseView):
     ) -> Any:
         """
         Retrieve model instance by ID or UUID
+        FIXME: implement proper authorization check based on the instance and the user
+        FIXME: implement proper error handling and logging
         """
         if self.model_type is None:
             raise NotImplementedError("model_type must be set in derived class")
@@ -204,10 +262,24 @@ class LPModelView(LPBaseView):
         options = self.augment_repo_options(for_listing=False)
 
         if dbid is not None:
-            return await repo.get_one_or_none(id=dbid, **options)
+            instance = await repo.get_one_or_none(id=dbid, **options)
         if uuid is not None:
-            return await repo.get_one_or_none(uuid=uuid, **options)
-        return None
+            instance = await repo.get_one_or_none(uuid=uuid, **options)
+
+        return instance
+
+    async def get_model_instance_with_check(
+        self, dbid: int | None = None, uuid: UUID | None = None
+    ) -> Any:
+        """
+        Retrieve model instance by ID or UUID with existence and authorization check
+        """
+        instance = await self.get_model_instance(dbid=dbid, uuid=uuid)
+        if instance is None:
+            raise NotFoundException("Instance not found")
+
+        # FIXME: implement proper authorization check based on the instance and the user
+        return instance
 
     async def index(
         self, data: dict[str, Any] | None = None
@@ -362,7 +434,7 @@ class LPModelView(LPBaseView):
                 errors = [(str(e), "stamp")]
 
                 return Template(
-                    template_name=self.form_template_file,
+                    template_name="lp/generics/errorpage.mako",
                     context={
                         "errors": errors,
                         "title": Markup("Editing ") + self.get_model_title(as_url=True),
