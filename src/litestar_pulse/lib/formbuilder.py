@@ -7,6 +7,14 @@ __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
 
+"""
+Form building primitives and model-backed form orchestration.
+
+This module provides descriptor-based field definitions (``InputField`` and
+subclasses), field proxies for value/option resolution, and ``ModelForm`` for
+validation, transformation, rendering, and persistence hooks.
+"""
+
 import json
 
 from typing import Any, Self, Callable, Awaitable
@@ -24,6 +32,7 @@ from litestar import Request
 
 from tagato import tags as t, formfields as f
 
+from ..config.app import logger
 from . import validators as v
 from . import compositetags as ct
 
@@ -52,7 +61,6 @@ from ..db.models.enumkey import EnumKeyRegistry
 # .validate() -> delegates to the InputField's validator
 # .opts() -> forwards display options to the form_input widget
 #
-# most
 
 
 class ParseFormError(ValueError):
@@ -142,6 +150,31 @@ class _InputFieldProxy:
         self.form_input.opts(**kwargs)
         return self
 
+    def _opts_with_option_callback(self, option_callback=None, **kwargs: Any) -> Self:
+        """Apply an optional runtime callback and forward options to the widget."""
+        if option_callback is not None:
+            self.form_input.option_callback = option_callback
+        self.form_input.opts(**kwargs)
+        return self
+
+    @staticmethod
+    def _coerce_optional_int(value: Any) -> int | None:
+        """Convert value to int unless it is an empty optional input."""
+        if value in (None, ""):
+            return None
+        return int(value)
+
+    def _resolve_related_text(self, obj: Any, fallback: str | None = "") -> str | None:
+        """Resolve display text from the configured related attribute if available."""
+        foreignkey_for = self.input_field.foreignkey_for
+        text_from = self.input_field.text_from
+        if obj is None or foreignkey_for is None or text_from is None:
+            return fallback
+        related_obj = getattr(obj, foreignkey_for, None)
+        if related_obj is None:
+            return fallback
+        return getattr(related_obj, text_from, fallback)
+
     def __tag__(self) -> t.Tag:
         """Tagato rendering protocol — returns the form input widget."""
         return self.form_input
@@ -151,34 +184,23 @@ class _ForeignKeyInputFieldProxy(_InputFieldProxy):
     """Proxy for ForeignKeyField — resolves value as ``(id, display_text)`` tuple."""
 
     def opts(self, option_callback=None, **kwargs: Any) -> Self:
-        if option_callback is not None:
-            self.form_input.option_callback = option_callback
-        self.form_input.opts(**kwargs)
-        return self
+        return self._opts_with_option_callback(
+            option_callback=option_callback, **kwargs
+        )
 
     def get_value(self) -> tuple[int | None, str | None]:
         obj = getattr(self.owner_instance, "obj", None)
         data = getattr(self.owner_instance, "data")
         if self.name in data:
-            # if not self.input_field.required and data[self.name] == "":
-            #    return (None, "")
-            value = data[self.name]
-            if value == "":
+            value = self._coerce_optional_int(data[self.name])
+            if value is None:
                 return (None, "")
-            value = int(value)
-            text = None
-            if value is not None and self.input_field.foreignkey_for is not None:
-                related_obj = getattr(obj, self.input_field.foreignkey_for, None)
-                if related_obj is not None:
-                    text = getattr(related_obj, self.input_field.text_from, "")
+            text = self._resolve_related_text(obj, fallback=None)
             return (value, text)
 
         if obj is not None:
             value = getattr(obj, self.name, None)
-            text = ""
-            if value is not None and self.input_field.foreignkey_for is not None:
-                related_obj = getattr(obj, self.input_field.foreignkey_for)
-                text = getattr(related_obj, self.input_field.text_from, "")
+            text = self._resolve_related_text(obj, fallback="")
             return (value, text)
         return (None, "")
 
@@ -190,7 +212,9 @@ class _EnumKeyInputFieldProxy(_InputFieldProxy):
         obj = getattr(self.owner_instance, "obj", None)
         data = getattr(self.owner_instance, "data")
         if self.name in data:
-            value = int(data[self.name])
+            value = self._coerce_optional_int(data[self.name])
+            if value is None:
+                return (None, None)
             ekey = EnumKeyRegistry.get_by_id(None, value)
             return (value, ekey.key)
         if obj is not None:
@@ -213,7 +237,6 @@ class _EnumKeyInputFieldProxy(_InputFieldProxy):
                 f"Object class {obj.__class__.__name__} does not have EnumKeyProxy attribute '{enumproxy_name}'"
             )
         category_key = enumproxy.category_key
-        enumkey_registry = enumproxy.__registry__
         return EnumKeyRegistry.get_all_items(category_key)
 
 
@@ -258,29 +281,23 @@ class _DBEnumKeyInputFieldProxy(_InputFieldProxy):
     """Proxy for DBEnumKeyField — resolves value from a DB-backed EnumKey relation."""
 
     def opts(self, option_callback=None, **kwargs: Any) -> Self:
-        if option_callback is not None:
-            self.form_input.option_callback = option_callback
-        self.form_input.opts(**kwargs)
-        return self
+        return self._opts_with_option_callback(
+            option_callback=option_callback, **kwargs
+        )
 
     def get_value(self) -> tuple[int | None, str | None]:
         obj = getattr(self.owner_instance, "obj", None)
         data = getattr(self.owner_instance, "data")
         if self.name in data:
-            value = int(data[self.name])
-            text = None
-            if value is not None and self.input_field.foreignkey_for is not None:
-                related_obj = getattr(obj, self.input_field.foreignkey_for, None)
-                if related_obj is not None:
-                    text = getattr(related_obj, self.input_field.text_from, "")
+            value = self._coerce_optional_int(data[self.name])
+            if value is None:
+                return (None, None)
+            text = self._resolve_related_text(obj, fallback=None)
             return (value, text)
 
         if obj is not None:
             value = getattr(obj, self.name, None)
-            text = ""
-            if value is not None and self.input_field.foreignkey_for is not None:
-                related_obj = getattr(obj, self.input_field.foreignkey_for)
-                text = getattr(related_obj, self.input_field.text_from, "")
+            text = self._resolve_related_text(obj, fallback="")
             return (value, text)
         return (None, None)
 
@@ -299,7 +316,6 @@ class _FileUploadFieldProxy(_InputFieldProxy):
 
         if obj is not None:
             file_object: FileObject = getattr(obj, self.name, None)
-            value = t.a(href=self.input_field)
             return file_object
         return None
 
@@ -360,6 +376,14 @@ class _FilePondFieldProxy(_InputFieldProxy):
         the FilePond input.
         """
         return self.input_field.categories
+
+    def opts(self, **kwargs: Any) -> Self:
+        """
+        Override to forward options to the FilePond input and also set the
+        'url_for' option to the controller's get_files_url method if available.
+        """
+        self.url_for = kwargs.pop("url_for", None)
+        return super().opts(**kwargs)
 
 
 @dataclass
@@ -444,12 +468,9 @@ class InputField:
         raise NotImplementedError(
             "opts() should be implemented in the InputField proxy class."
         )
-        self._forminput.opts(**kwargs)
 
     @cached_property
     def _forminput(self) -> f.BaseInput:
-        raise RuntimeError("this should not be executed")
-        print(f"Creating form input for field: {self!r}")
         return self.forminput(label=self.label, input_provider=self)
 
     async def async_prerender(
@@ -481,6 +502,35 @@ class InputField:
                 options = [("", "")] + options
             form_input.opts(options=options)
             # form_input.options = options
+
+
+def _register_tomselect_jscode(
+    *, form_instance: Any, field_name: str, tom_options: dict[str, Any]
+) -> None:
+    """Append TomSelect initialization JavaScript for a select field."""
+
+    escaped_field_name = field_name.replace("\\", "\\\\").replace("'", "\\'")
+    options_json = json.dumps(tom_options, ensure_ascii=True)
+
+    form_instance.jscode.append(
+        """
+(function() {
+    if (typeof TomSelect === 'undefined') {
+        return;
+    }
+    var selector = "select[name='"""
+        + escaped_field_name
+        + """']";
+    var element = document.querySelector(selector);
+    if (!element || element.tomselect) {
+        return;
+    }
+    new TomSelect(element, """
+        + options_json
+        + """);
+})();
+""".strip()
+    )
 
 
 class StringField(InputField):
@@ -842,16 +892,18 @@ class TomSelectField(InputField):
         tom_select_options: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(
-            label=label,
+        _validator = validator(
             required=required,
-            options=options,
-            option_callback=option_callback,
-            validator=validator,
-            options_async_callback=options_async_callback,
-            forminput=forminput,
             **kwargs,
         )
+        super().__init__(
+            label=label,
+            validator=_validator,
+            forminput=forminput,
+        )
+        self.options = options
+        self.option_callback = option_callback
+        self.option_async_callback = options_async_callback
         self.tom_select_options = tom_select_options or {}
 
     async def async_prerender(
@@ -872,28 +924,10 @@ class TomSelectField(InputField):
             "allowEmptyOption": True,
         }
         tom_options.update(self.tom_select_options)
-
-        escaped_field_name = field_name.replace("\\", "\\\\").replace("'", "\\'")
-        options_json = json.dumps(tom_options, ensure_ascii=True)
-
-        form_instance.jscode.append(
-            """
-(function() {
-    if (typeof TomSelect === 'undefined') {
-        return;
-    }
-    var selector = "select[name='"""
-            + escaped_field_name
-            + """']";
-    var element = document.querySelector(selector);
-    if (!element || element.tomselect) {
-        return;
-    }
-    new TomSelect(element, """
-            + options_json
-            + """);
-})();
-""".strip()
+        _register_tomselect_jscode(
+            form_instance=form_instance,
+            field_name=field_name,
+            tom_options=tom_options,
         )
 
 
@@ -958,28 +992,10 @@ class TomSelectEnumKeyCollectionField(InputField):
             "maxItems": None,  # allow unlimited selections for collection
         }
         tom_options.update(self.tom_select_options)
-
-        escaped_field_name = field_name.replace("\\", "\\\\").replace("'", "\\'")
-        options_json = json.dumps(tom_options, ensure_ascii=True)
-
-        form_instance.jscode.append(
-            """
-(function() {
-    if (typeof TomSelect === 'undefined') {
-        return;
-    }
-    var selector = "select[name='"""
-            + escaped_field_name
-            + """']";
-    var element = document.querySelector(selector);
-    if (!element || element.tomselect) {
-        return;
-    }
-    new TomSelect(element, """
-            + options_json
-            + """);
-})();
-""".strip()
+        _register_tomselect_jscode(
+            form_instance=form_instance,
+            field_name=field_name,
+            tom_options=tom_options,
         )
 
 
@@ -1172,6 +1188,29 @@ class ModelForm:
         """
         raise error
 
+    def _iter_field_validation_inputs(
+        self,
+        data: dict[str, Any],
+        *,
+        only_present: bool,
+    ):
+        """Yield normalized field inputs used by validate and transform."""
+
+        for field_name in self.__fields__:
+            if not hasattr(self, field_name):
+                continue
+            if only_present and field_name not in data:
+                continue
+
+            field_proxy = getattr(self, field_name)
+            value = data.get(field_name, None)
+
+            validator = field_proxy.input_field.validator
+            if validator.type == list and hasattr(data, "getall"):
+                value = data.getall(field_name, [])
+
+            yield field_name, field_proxy, value
+
     def validate(self, obj: Any, data: dict[str, Any]) -> None:
         """Validate all declared fields against the submitted data.
 
@@ -1182,17 +1221,10 @@ class ModelForm:
         """
         error_list = []
 
-        for field_name in self.__fields__:
-            if not hasattr(self, field_name):
-                continue
-            field_validator = getattr(self, field_name)
-            value = data.get(field_name, None)
-
-            validator = field_validator.input_field.validator
-            if validator.type == list and hasattr(data, "getall"):
-                value = data.getall(field_name, [])
-
-            result, err_msg = field_validator.validate(value, obj=obj)
+        for field_name, field_proxy, value in self._iter_field_validation_inputs(
+            data, only_present=False
+        ):
+            result, err_msg = field_proxy.validate(value, obj=obj)
             if not result:
                 error_list.append((f"Invalid {field_name}: {err_msg}", field_name))
 
@@ -1228,41 +1260,34 @@ class ModelForm:
         transformed_data = {}
         error_list = []
 
-        for field_name in self.__fields__:
-            if not hasattr(self, field_name):
-                continue
-            if field_name not in data:
-                continue
-            field_validator = getattr(self, field_name)
-            value = data.get(field_name)
-
-            validator = field_validator.input_field.validator
-            if validator.type == list and hasattr(data, "getall"):
-                value = data.getall(field_name, [])
-
-            result, err_msg = field_validator.validate(value, obj=obj)
+        for field_name, field_proxy, value in self._iter_field_validation_inputs(
+            data, only_present=True
+        ):
+            result, err_msg = field_proxy.validate(value, obj=obj)
             if not result:
                 error_list.append((f"Invalid {field_name}: {err_msg}", field_name))
                 continue
 
-            transformed_value = field_validator.transform(value)
+            transformed_value = field_proxy.transform(value)
             transformed_data[field_name] = transformed_value
 
         if any(error_list):
             raise ParseFormError(error_list)
 
-        # processed special flag attributes for transformations that are not handled
-        # by validators, such as attribute removal flags
-        for key in [s for s in data.keys() if s.endswith("-retain-if-false!flag")]:
-
-            # if -retain-if-false!flag is not true, keep the existing value by not
-            # including it in transformed_data as long as the
-            attr_name = key.removesuffix("-retain-if-false!flag")
-            if not data.pop(key):
-                if not transformed_data.get(attr_name):
-                    del transformed_data[attr_name]
+        self._apply_retain_if_false_flags(transformed_data, data)
 
         return transformed_data
+
+    @staticmethod
+    def _apply_retain_if_false_flags(
+        transformed_data: dict[str, Any], data: dict[str, Any]
+    ) -> None:
+        """Process ``-retain-if-false!flag`` controls on transformed payload."""
+
+        for key in [s for s in data.keys() if s.endswith("-retain-if-false!flag")]:
+            attr_name = key.removesuffix("-retain-if-false!flag")
+            if not data.get(key) and not transformed_data.get(attr_name):
+                transformed_data.pop(attr_name, None)
 
     async def update(self, obj: Any, data: dict[str, Any], dbhandler: Any) -> None:
         """Apply transformed form data to the database object and flush.
@@ -1278,8 +1303,6 @@ class ModelForm:
             raise ValueError("Object is not attached to a session")
 
         await self.before_update(obj, data, dbhandler.session)
-
-        print("Updating object with data:", data)
 
         try:
             srv = dbhandler.get_service(self.model_type)
@@ -1304,6 +1327,7 @@ class ModelForm:
         obj_stamp = getattr(obj, "updated_at", None)
         if form_stamp is None or obj_stamp is None:
             raise ParseFormError([("Missing timestamp", "stamp")])
+        logger.info(f"Checking timestamp: form={form_stamp} vs obj={obj_stamp}")
         if str(obj_stamp) != form_stamp:
             raise TimeStampError(
                 "The data has been modified by another user or process. Please refresh and try again."
