@@ -92,16 +92,7 @@ class UpdatedByColumn:
 
     @declared_attr
     def updated_by(cls) -> Mapped["User"]:
-        # kwargs = {}
-        # with User class, the relationship becomes self-reference/adjacency list hence
-        # needs remote_side to establish the correct many-to-one relationship
-        # if self.__name__ == "User":
-        #    kwargs["remote_side"] = [self.id]
-        # return relationship(
-        #    "User", uselist=False, foreign_keys=self.lastuser_id, **kwargs
-        # )
-        return relationship(
-            "User",
+        relation_kwargs = dict(
             uselist=False,
             foreign_keys=[cls.updated_by_id],
             remote_side="User.id",
@@ -109,50 +100,76 @@ class UpdatedByColumn:
             lazy="joined",
         )
 
+        # Updating a User by itself can temporarily produce a self-referential
+        # many-to-one dependency graph; post_update breaks that cycle safely.
+        if cls.__name__ == "User":
+            relation_kwargs["post_update"] = True
+
+        return relationship("User", **relation_kwargs)
+
     @cached_property
     def updated_by_login(self) -> str:
         return self.updated_by.login if self.updated_by else "-"
 
 
+class _FileUtilityMixin:
+
+    __storage_backend__: str = None
+
+    @classmethod
+    def get_storage_backend(cls) -> str:
+        return cls.__storage_backend__
+
+    def get_fileobject_storage_path(self, filename: str = "") -> str:
+        # generate a file path for the given uuid using the first 2 characters as subdirectories
+        class_name = self.__class__.__name__.lower()
+        uuid = str(self.uuid)
+        filename = filename or (fastnanoid.generate(size=8) + "-db")
+        return f"{class_name}/{uuid[-2:]}/{uuid[2:4]}/{uuid}/{filename}", filename
+
+    def set_fileobject_metadata(
+        self,
+        filename: str,  # original filename
+        content_type: str,  # http content type
+        category: str = "",  # category tag
+        description: str = "",  # description of the file
+        updated_by_id: int = 0,  # user id of the updater, for now set to 0
+        updated_at: int = 0,  # timestamp of the update as integer epoch UTC
+    ) -> dict[str, str]:
+        return dict(
+            filename=filename,
+            content_type=content_type,
+            category=category,
+            description=description,
+            updated_by_id=updated_by_id,
+            updated_at=updated_at or int(datetime.now(timezone.utc).timestamp()),
+        )
+
+
+def Attachment(storage_backend: str) -> Type:
+
+    @declarative_mixin
+    class _Attachment(_FileUtilityMixin):
+
+        __storage_backend__: str = storage_backend
+
+        attachment: Mapped[Optional[FileObject]] = mapped_column(
+            StoredObject(backend=storage_backend), nullable=True
+        )
+
+    return _Attachment
+
+
 def AttachedFiles(storage_backend: str) -> Type:
 
     @declarative_mixin
-    class _AttachedFiles:
+    class _AttachedFiles(_FileUtilityMixin):
 
-        __storage_backend__ = storage_backend
+        __storage_backend__: str = storage_backend
 
         files: Mapped[Optional[FileObjectList]] = mapped_column(
             StoredObject(backend=storage_backend, multiple=True), nullable=True
         )
-
-        @classmethod
-        def get_storage_backend(cls) -> str:
-            return cls.__storage_backend__
-
-        def get_fileobject_storage_path(self, filename: str = "") -> str:
-            # generate a file path for the given uuid using the first 2 characters as subdirectories
-            class_name = self.__class__.__name__.lower()
-            uuid = str(self.uuid)
-            filename = filename or (fastnanoid.generate(size=8) + "-db")
-            return f"{class_name}/{uuid[-2:]}/{uuid[2:4]}/{uuid}/{filename}", filename
-
-        def set_fileobject_metadata(
-            self,
-            filename: str,  # original filename
-            content_type: str,  # http content type
-            category: str = "",  # category tag
-            description: str = "",  # description of the file
-            updated_by_id: int = 0,  # user id of the updater, for now set to 0
-            updated_at: int = 0,  # timestamp of the update as integer epoch UTC
-        ) -> dict[str, str]:
-            return dict(
-                filename=filename,
-                content_type=content_type,
-                category=category,
-                description=description,
-                updated_by_id=updated_by_id,
-                updated_at=updated_at or int(datetime.now(timezone.utc).timestamp()),
-            )
 
     return _AttachedFiles
 
