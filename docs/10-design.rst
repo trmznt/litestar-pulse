@@ -15,8 +15,6 @@ Select
 ----------
 
 Tom-select is select2 alternative without jquery dependency.
-Choices.js is another option.
-
 
 Scripting
 ---------
@@ -26,11 +24,14 @@ Otherwise, will be using pyscript (micropython version) for client side scriptin
 if necessary for complex stuff (just because python is nicer to write than js).
 Pyscript is chosen instead of brython because (I hope) it has better debugging support.
 
+For javascript helper, alpinejs is is used to add simple interactivity to the UI.
+
 
 HTMX
 ----
 
 This is to provide simple interactive HTML, to avoid writing js code for simple tasks.
+But still consider alpinejs.
 
 Styling and UI layout
 ---------------------
@@ -47,4 +48,28 @@ Installation
 - VVG_BASEDIR/instances/domain-name will be the main point for running the application
 - VVG_BASEDIR/instances/domain-name/db is used for sqlite and caching
 
+Roles
+-----
+
+Role based access control will be used for authorization.
+Each model will have class attributes defining which roles can view, manage (create/modify/delete),
+modify the model.
+The access control will be enforced in the database service layer and view (user interface) layer.
+
+File storage and file attachments
+---------------------------------
+
+Metadata will be stored in the database, and depending on the file size, the content will be stored
+in the database or in the file system.
+Need to decide whether to use previous rhombus FileAttachment and File model which relies on using
+foreign keys, used advanced-alchemy FileObject or other 3rd party library such as SQLAlchemy-File or
+DEPOT.
+Current plan is to combine advanced-alchemy FileObject for file storage and rhombus File for hierarchical
+file organization.
+
+Formbuilder
+-----------
+
+See docs/30-formbuilder.rst for a focused description of the descriptor/proxy/form orchestration,
+runtime update flow, and streamlining proposals.
 
