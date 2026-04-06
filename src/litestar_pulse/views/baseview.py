@@ -476,15 +476,6 @@ class LPBaseView(LPController):
         self.init_view(request, db_session, transaction)
         form_data = await request.form()
         return await self.action(form_data)
-        content = await self.action(form_data)
-        return Response(content=str(content), media_type="text/html")
-        return Template(
-            template_name=self.plain_template_file,
-            context={
-                "content": content,
-                "title": f"Delete Confirmation - {self.__class__.__name__}",
-            },
-        )
 
     async def action(self, data: dict[str, Any]) -> Any:
         """
@@ -597,6 +588,18 @@ class LPBaseView(LPController):
         return await self.files(dbid=dbid, fname=fname)
 
     async def files(self, dbid: int | None = None, fname: str | None = None) -> File:
+        """Render file page
+        - dbid and fname can be used to locate the file to be rendered
+        - the file can be located in the filesystem or in the database as blob
+        - the file can be rendered using File response with appropriate media type
+        - if the file is not found, return 404 response
+        - if the user is not authorized to access the file, return 403 response
+        - if there is an error while processing the request, return 500 response
+        - this method should be overridden by the subclass to provide the actual implementation of locating and rendering the file
+        - this method can also be used to perform any necessary authorization checks before rendering the file
+        - this method can also be used to perform any necessary logging before rendering the file
+        - this method should return a File response with appropriate media type if the file is found and accessible, or raise an appropriate exception if not
+        """
         raise NotImplementedError
 
 
