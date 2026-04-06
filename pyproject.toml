@@ -19,7 +19,7 @@ dependencies = [
     "litestar-debug-toolbar>=0.4.2",
     "litestar[jwt,mako,sqlalchemy,standard]>=2.19.0",
     "nest-asyncio>=1.6.0",
-    "passlib[argon2]>=1.7.4",
+    "pwdlib[argon2]>=0.3.0",
     "pytest>=9.0.2",
     "snowflake-id>=1.0.2",
 ]
