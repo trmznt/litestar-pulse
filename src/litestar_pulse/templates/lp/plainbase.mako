@@ -17,7 +17,7 @@
 
 
   </head>
-  <body>
+  <body id="body-layout">
     <div class="container-fluid">
     ${next.body()}
     </div>
