@@ -17,7 +17,7 @@ from advanced_alchemy.types.file_object import storages
 from litestar_pulse.config.filestorage import init_filestorage
 from litestar_pulse.db import handler_factory
 import litestar_pulse.db.handler as _handler_module  # noqa: F401
-from litestar_pulse.db.models.account import UserDomain
+from litestar_pulse.db.models.account import Group, User, UserDomain
 from litestar_pulse.db.models.enumkey import EnumKey
 
 
@@ -31,7 +31,7 @@ class _InMemoryUpload:
         self.file.name = "<memory>"
 
 
-class TestUserDomainAttachmentCleanup(unittest.IsolatedAsyncioTestCase):
+class TestUserAttachmentCleanup(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
@@ -53,9 +53,7 @@ class TestUserDomainAttachmentCleanup(unittest.IsolatedAsyncioTestCase):
         await self.engine.dispose()
         self.tmpdir.cleanup()
 
-    async def _seed_userdomain(
-        self, session: AsyncSession, domain_name: str
-    ) -> UserDomain:
+    async def _seed_user(self, session: AsyncSession, suffix: str) -> User:
         category = EnumKey(
             key="@USERDOMAIN_TYPE", desc="Domain type", is_category=True, syskey=True
         )
@@ -65,42 +63,54 @@ class TestUserDomainAttachmentCleanup(unittest.IsolatedAsyncioTestCase):
         session.add_all([category, internal])
         await session.flush()
 
-        instance = UserDomain(
-            domain=domain_name,
-            desc=domain_name,
+        domain = UserDomain(
+            domain=f"{suffix}.example",
+            desc=f"{suffix}.example",
             domain_type_id=internal.id,
         )
-        session.add(instance)
+        session.add(domain)
+        await session.flush()
+
+        group = Group(name=f"group-{suffix}", desc=f"group-{suffix}")
+        session.add(group)
+        await session.flush()
+
+        user = User(
+            login=f"user-{suffix}",
+            email=f"user-{suffix}@example.test",
+            lastname="Attachment",
+            firstname="Test",
+            credential="x",
+            domain_id=domain.id,
+            primarygroup_id=group.id,
+        )
+        session.add(user)
         await session.commit()
-        await session.refresh(instance)
-        return instance
+        await session.refresh(user)
+        return user
 
     async def test_replacing_attachment_deletes_old_file(self) -> None:
         async with self.session_maker() as session:
-            domain = await self._seed_userdomain(session, "replace.example")
+            user = await self._seed_user(session, "replace")
             dbh = handler_factory(session)
             backend = storages.get_backend("lp_storage")
 
             first_upload = _InMemoryUpload("old.txt", b"old-content")
-            await dbh.service.UserDomain.update_from_dict(
-                domain, {"attachment": first_upload}
-            )
+            await dbh.service.User.update_from_dict(user, {"attachment": first_upload})
             await session.commit()
-            await session.refresh(domain)
+            await session.refresh(user)
 
-            self.assertIsNotNone(domain.attachment)
-            old_path = domain.attachment.path  # type: ignore[union-attr]
+            self.assertIsNotNone(user.attachment)
+            old_path = user.attachment.path  # type: ignore[union-attr]
             self.assertEqual(backend.get_content(old_path), b"old-content")
 
             second_upload = _InMemoryUpload("new.txt", b"new-content")
-            await dbh.service.UserDomain.update_from_dict(
-                domain, {"attachment": second_upload}
-            )
+            await dbh.service.User.update_from_dict(user, {"attachment": second_upload})
             await session.commit()
-            await session.refresh(domain)
+            await session.refresh(user)
 
-            self.assertIsNotNone(domain.attachment)
-            new_path = domain.attachment.path  # type: ignore[union-attr]
+            self.assertIsNotNone(user.attachment)
+            new_path = user.attachment.path  # type: ignore[union-attr]
             self.assertEqual(backend.get_content(new_path), b"new-content")
 
             with self.assertRaises(FileNotFoundError):
@@ -108,26 +118,24 @@ class TestUserDomainAttachmentCleanup(unittest.IsolatedAsyncioTestCase):
 
     async def test_clearing_attachment_deletes_old_file(self) -> None:
         async with self.session_maker() as session:
-            domain = await self._seed_userdomain(session, "clear.example")
+            user = await self._seed_user(session, "clear")
             dbh = handler_factory(session)
             backend = storages.get_backend("lp_storage")
 
             upload = _InMemoryUpload("clear-me.txt", b"clear-me")
-            await dbh.service.UserDomain.update_from_dict(
-                domain, {"attachment": upload}
-            )
+            await dbh.service.User.update_from_dict(user, {"attachment": upload})
             await session.commit()
-            await session.refresh(domain)
+            await session.refresh(user)
 
-            self.assertIsNotNone(domain.attachment)
-            old_path = domain.attachment.path  # type: ignore[union-attr]
+            self.assertIsNotNone(user.attachment)
+            old_path = user.attachment.path  # type: ignore[union-attr]
             self.assertEqual(backend.get_content(old_path), b"clear-me")
 
-            await dbh.service.UserDomain.update_from_dict(domain, {"attachment": None})
+            await dbh.service.User.update_from_dict(user, {"attachment": None})
             await session.commit()
-            await session.refresh(domain)
+            await session.refresh(user)
 
-            self.assertIsNone(domain.attachment)
+            self.assertIsNone(user.attachment)
             with self.assertRaises(FileNotFoundError):
                 backend.get_content(old_path)
 
