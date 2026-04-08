@@ -32,7 +32,7 @@ class EnumKeyForm(fb.ModelForm):
     )
     is_category = fb.CheckboxField(label="Category", required=False)
 
-    async def set_layout(self, controller: Any = None) -> t.htmltag:
+    async def set_layout(self, controller: Any = None) -> t.Tag:
         form_layout = t.fragment()[
             f.fieldset(name="main")[
                 f.InlineInput()[self.key.opts(offset=2),],
@@ -74,13 +74,11 @@ class EnumKeyView(LPModelView):
     def generate_instance_table(
         self,
         enumkeys: list[EnumKey],
-    ) -> tuple[t.htmltag, str]:
+    ) -> tuple[t.Tag, str]:
         return generate_enumkey_table(enumkeys, self.req)
 
 
-def generate_enumkey_table(
-    enumkeys: list[EnumKey], req: Request
-) -> tuple[t.htmltag, str]:
+def generate_enumkey_table(enumkeys: list[EnumKey], req: Request) -> tuple[t.Tag, str]:
     not_guest = True
 
     table_body = t.tbody()

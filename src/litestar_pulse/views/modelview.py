@@ -97,7 +97,7 @@ class LPModelView(LPBaseView):
 
     # override the following methods
 
-    def generate_instance_table(self, instances: list[Any]) -> tuple[t.htmltag, str]:
+    def generate_instance_table(self, instances: list[Any]) -> tuple[t.Tag, str]:
         """
         Generate the instance table for the given instances
         """
@@ -281,9 +281,7 @@ class LPModelView(LPBaseView):
         # FIXME: implement proper authorization check based on the instance and the user
         return instance
 
-    async def index(
-        self, data: dict[str, Any] | None = None
-    ) -> dict[str, t.htmltag | str]:
+    async def index(self, data: dict[str, Any] | None = None) -> dict[str, t.Tag | str]:
         """
         Render the user domain list page
         """
@@ -295,7 +293,7 @@ class LPModelView(LPBaseView):
 
     async def view(
         self, dbid: int | None = None, uuid: str | None = None
-    ) -> dict[str, t.htmltag | str]:
+    ) -> dict[str, t.Tag | str]:
         """
         Render the user domain detail page by ID or UUID
         """
@@ -323,7 +321,7 @@ class LPModelView(LPBaseView):
 
     async def edit(
         self, dbid: int | None = None, uuid: str | None = None
-    ) -> dict[str, t.htmltag | str]:
+    ) -> dict[str, t.Tag | str]:
         """
         Render the user domain edit page by ID or UUID
         """
@@ -503,7 +501,7 @@ class LPModelView(LPBaseView):
 
     # layoutting
 
-    def get_model_title(self, as_url: bool = False) -> str | t.htmltag:
+    def get_model_title(self, as_url: bool = False) -> str | t.Tag:
         """
         Get the model title for display purposes
         """
@@ -523,14 +521,14 @@ class LPModelView(LPBaseView):
 
     def compose_layout(
         self,
-        main_panel: dict[str, t.htmltag | str] | None = None,
-        top_panel: dict[str, t.htmltag | str] | None = None,
-        left_top_panel: dict[str, t.htmltag | str] | None = None,
-        right_top_panel: dict[str, t.htmltag | str] | None = None,
-        left_bottom_panel: dict[str, t.htmltag | str] | None = None,
-        right_bottom_panel: dict[str, t.htmltag | str] | None = None,
-        bottom_panel: dict[str, t.htmltag | str] | None = None,
-    ) -> dict[str, t.htmltag | str]:
+        main_panel: dict[str, t.Tag | str] | None = None,
+        top_panel: dict[str, t.Tag | str] | None = None,
+        left_top_panel: dict[str, t.Tag | str] | None = None,
+        right_top_panel: dict[str, t.Tag | str] | None = None,
+        left_bottom_panel: dict[str, t.Tag | str] | None = None,
+        right_bottom_panel: dict[str, t.Tag | str] | None = None,
+        bottom_panel: dict[str, t.Tag | str] | None = None,
+    ) -> dict[str, t.Tag | str]:
         """
         Compose the layout for the view.
         Each of dictionary parameters is expected to have an "html" key with the HTML content,
@@ -605,7 +603,7 @@ class LPModelView(LPBaseView):
             scriptlink_lines="\n".join(scriptlinks),
         )
 
-    async def get_main_panel(self, instance: Any) -> dict[str, t.htmltag | str] | None:
+    async def get_main_panel(self, instance: Any) -> dict[str, t.Tag | str] | None:
         """
         Get the main panel for the given instance, by default it will show the instance detail
         """
@@ -619,31 +617,25 @@ class LPModelView(LPBaseView):
             controller=self,
         )
 
-    async def get_top_panel(self, instance: Any) -> dict[str, t.htmltag | str] | None:
+    async def get_top_panel(self, instance: Any) -> dict[str, t.Tag | str] | None:
         """
         Get the top panel for the given instance, by default it will show the model title
         """
         return None
 
-    async def get_bottom_panel(
-        self, instance: Any
-    ) -> dict[str, t.htmltag | str] | None:
+    async def get_bottom_panel(self, instance: Any) -> dict[str, t.Tag | str] | None:
         """
         Get the bottom panel for the given instance, by default it will show nothing
         """
         return None
 
-    async def get_left_top_panel(
-        self, instance: Any
-    ) -> dict[str, t.htmltag | str] | None:
+    async def get_left_top_panel(self, instance: Any) -> dict[str, t.Tag | str] | None:
         """
         Get the left top panel for the given instance, by default it will show nothing
         """
         return None
 
-    async def get_right_top_panel(
-        self, instance: Any
-    ) -> dict[str, t.htmltag | str] | None:
+    async def get_right_top_panel(self, instance: Any) -> dict[str, t.Tag | str] | None:
         """
         Get the right top panel for the given instance, by default it will show nothing
         """
@@ -651,7 +643,7 @@ class LPModelView(LPBaseView):
 
     async def get_left_bottom_panel(
         self, instance: Any
-    ) -> dict[str, t.htmltag | str] | None:
+    ) -> dict[str, t.Tag | str] | None:
         """
         Get the left bottom panel for the given instance, by default it will show nothing
         """
@@ -659,7 +651,7 @@ class LPModelView(LPBaseView):
 
     async def get_right_bottom_panel(
         self, instance: Any
-    ) -> dict[str, t.htmltag | str] | None:
+    ) -> dict[str, t.Tag | str] | None:
         """
         Get the right bottom panel for the given instance, by default it will show nothing
         """

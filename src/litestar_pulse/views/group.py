@@ -44,7 +44,7 @@ class GroupForm(fb.ModelForm):
         required=False,
     )
 
-    async def set_layout(self, controller: Any = None) -> t.htmltag:
+    async def set_layout(self, controller: Any = None) -> t.Tag:
         form_layout = t.fragment(name="group-form")[
             f.fieldset(name="main")[
                 f.InlineInput()[
@@ -115,10 +115,10 @@ class GroupView(LPModelView):
     def generate_instance_table(
         self,
         groups: list[Group],
-    ) -> tuple[t.htmltag, str]:
+    ) -> tuple[t.Tag, str]:
         return generate_group_table(groups, self.req)
 
-    async def get_bottom_panel(self, instance: Any) -> t.htmltag:
+    async def get_bottom_panel(self, instance: Any) -> t.Tag:
 
         usergroups = await instance.awaitable_attrs.usergroups
         if not any(usergroups):
@@ -135,9 +135,7 @@ class GroupView(LPModelView):
         )
 
 
-def generate_group_table(
-    groups: list[Group], request: Request
-) -> tuple[t.htmltag, str]:
+def generate_group_table(groups: list[Group], request: Request) -> tuple[t.Tag, str]:
     """
     Generate an HTML table for the given list of Group objects
     """
@@ -203,7 +201,7 @@ def generate_group_table(
 
 def generate_usergroup_table(
     usergroups: list[Group], request: Request
-) -> tuple[t.htmltag, str]:
+) -> tuple[t.Tag, str]:
     """
     Generate an HTML table for the given list of UserGroup objects
     """

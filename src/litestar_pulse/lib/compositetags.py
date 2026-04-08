@@ -101,7 +101,7 @@ class selection_bar(object):
         prefix: str,
         action: str,
         add: tuple[str, str] | None = None,
-        others: t.htmltag | str = "",
+        others: t.Tag | str = "",
         hidden_inputs: dict[str, str | int] | None = None,
         name="",
         delete_label="Delete",

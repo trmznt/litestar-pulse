@@ -49,7 +49,7 @@ class UserDomainForm(fb.ModelForm):
         label="Files", required=False, categories=["General", "Contract"]
     )
 
-    async def set_layout(self, controller: Any = None) -> t.htmltag:
+    async def set_layout(self, controller: Any = None) -> t.Tag:
         form_layout = t.fragment()[
             f.fieldset(name="main")[
                 f.InlineInput()[
@@ -108,7 +108,7 @@ class UserDomainView(LPModelView):
     def generate_instance_table(
         self,
         userdomains: list[UserDomain],
-    ) -> tuple[t.htmltag, str]:
+    ) -> tuple[t.Tag, str]:
         return generate_userdomain_table(userdomains, self.req)
 
     def augment_repo_options(self, for_listing: bool = False) -> dict[str, Any]:
@@ -121,7 +121,7 @@ class UserDomainView(LPModelView):
 
 def generate_userdomain_table(
     userdomains: list[UserDomain], request: Request
-) -> tuple[t.htmltag, str]:
+) -> tuple[t.Tag, str]:
     """
     Generate an HTML table for the given list of UserDomain objects
     """

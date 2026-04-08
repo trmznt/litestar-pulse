@@ -60,7 +60,7 @@ class UserForm(fb.ModelForm):
     )
     attachment = fb.FileUploadField(label="Attachment", required=False)
 
-    async def set_layout(self, controller: Any = None) -> t.htmltag:
+    async def set_layout(self, controller: Any = None) -> t.Tag:
         form_layout = t.fragment()[
             f.fieldset(name="main")[
                 f.InlineInput()[
@@ -132,10 +132,10 @@ class UserView(LPModelView):
     def generate_instance_table(
         self,
         users: list[User],
-    ) -> tuple[t.htmltag, str]:
+    ) -> tuple[t.Tag, str]:
         return generate_user_table(users, self.req)
 
-    async def get_bottom_panel(self, instance: Any) -> t.htmltag:
+    async def get_bottom_panel(self, instance: Any) -> t.Tag:
 
         usergroups = await instance.awaitable_attrs.usergroups
 
@@ -280,7 +280,7 @@ class UserView(LPModelView):
         )
 
 
-def generate_user_table(users: list[User], request: Request) -> tuple[t.htmltag, str]:
+def generate_user_table(users: list[User], request: Request) -> tuple[t.Tag, str]:
     """
     Generate an HTML table for the given list of User objects
     """
@@ -351,7 +351,7 @@ template_datatable_js = """
 """
 
 
-def additional_usergroup_buttons(selection_bar: ct.selection_bar) -> t.htmltag:
+def additional_usergroup_buttons(selection_bar: ct.selection_bar) -> t.Tag:
     return t.fragment()[
         t.button(
             class_="btn btn-sm btn-warning",
@@ -378,7 +378,7 @@ def additional_usergroup_buttons(selection_bar: ct.selection_bar) -> t.htmltag:
 
 def generate_usergroup_table(
     usergroups: list[UserGroup], request: Request
-) -> tuple[t.htmltag, str]:
+) -> tuple[t.Tag, str]:
     """
     Generate an HTML table for the given list of UserGroup objects
     """
@@ -439,7 +439,7 @@ def generate_usergroup_table(
 
 async def generate_usergroup_removal_popup(
     controller: LPModelView, dbids: list[int]
-) -> t.htmltag:
+) -> t.Tag:
 
     if not any(dbids):
         return modal_info(
@@ -523,7 +523,7 @@ async def remove_usergroup(controller: LPModelView, dbids: list[int]) -> Respons
 
 async def generate_usergroup_modify_role_popup(
     controller: LPModelView, dbids: list[int]
-) -> t.htmltag:
+) -> t.Tag:
 
     if not any(dbids):
         return modal_info(
@@ -629,7 +629,7 @@ async def modify_usergroup_role(
 
 async def generate_usergroup_add_popup(
     controller: LPModelView, data: dict[str, Any]
-) -> t.htmltag:
+) -> t.Tag:
 
     try:
         user_id = int(data.get("user-id", 0) or 0)

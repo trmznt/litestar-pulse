@@ -1449,7 +1449,7 @@ class ModelForm:
             scriptlink_lines="\n".join(self.scriptlinks),
         )
 
-    def header(self) -> t.htmltag:
+    def header(self) -> t.Tag:
         """
         Get the header for display purposes
         """
