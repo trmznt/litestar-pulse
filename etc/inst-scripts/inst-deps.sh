@@ -1,5 +1,8 @@
 
+(
 
+# run this under the base directory of the installation
+cd ${VVG_BASEDIR}
 micromamba install -y uv
 
 # create minimal pyproject.toml
@@ -21,5 +24,7 @@ uv sync
 
 # create instances directory
 mkdir -p instances
+
+)
 
 # EOF
