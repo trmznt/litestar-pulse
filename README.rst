@@ -4,6 +4,14 @@ Litestar-Pulse
 
 Litestar-Pulse is an add-on library for Litestar to manage users, groups, and permissions with a web interface.
 
+Installation
+============
+
+To install Litestar-Pulse, enter to the parent directory of the intended installation
+directory and execute the following command::
+
+	"${SHELL}" <(curl -L https://raw.githubusercontent.com/trmznt/litestar-pulse/main/install.sh)
+
 Tests
 =====
 
