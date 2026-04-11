@@ -296,7 +296,7 @@ class User(IdentityUUIDv7UserAuditBase, LPAttachment, RoleMixin):
     async def set_password(self, password: str) -> None:
         self.credential = await crypt.hash_password(password)
 
-    async def get_groups(self) -> list[Group]:
+    async def get_groups(self) -> set[Group]:
         return set([ug.group for ug in await self.awaitable_attrs.usergroups])
 
     async def get_roles(self, groups: list[Group] | None = None) -> set[str]:
@@ -465,7 +465,7 @@ UserDomain.user_count: Mapped[int] = deferred(
         .correlate_except(User)
         .scalar_subquery()
     )
-)
+)  # type: ignore
 
 
 # EOF
