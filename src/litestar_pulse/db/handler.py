@@ -14,12 +14,12 @@ import yaml
 import anyio
 import shutil
 from pathlib import Path
-from collections.abc import Awaitable
-from typing import Any, Awaitable, TypeVar
+from collections.abc import Sequence
+from typing import Any, Generic, TypeVar
 
 import fastnanoid
 
-from sqlalchemy import inspect, select
+from sqlalchemy import Row, inspect, select
 from sqlalchemy.orm import DeclarativeBase, undefer, joinedload, object_session
 from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy.orm.attributes import flag_modified
@@ -46,7 +46,9 @@ logger = logging.getLogger(__name__)
 class EnumKeyRepo(SQLAlchemyAsyncRepository[enumkey.EnumKey]):
     model_type = enumkey.EnumKey
 
-    async def get_all_categories_for_options(self) -> Awaitable[list[tuple[int, str]]]:
+    async def get_all_categories_for_options(
+        self,
+    ) -> Sequence[Row[tuple[int, str]]]:
 
         stmt = (
             select(enumkey.EnumKey.id, enumkey.EnumKey.key)
@@ -65,13 +67,13 @@ class GroupDTO(SQLAlchemyDTO[account.Group]):
     config = DTOConfig(
         max_nested_depth=1,
         exclude={"id"},
-    )
+    )  # type: ignore
 
 
 class GroupRepo(SQLAlchemyAsyncRepository[account.Group]):
     model_type = account.Group
 
-    async def get_all_for_options(self) -> Awaitable[list[tuple[int, str]]]:
+    async def get_all_for_options(self) -> Sequence[Row[tuple[int, str]]]:
 
         stmt = select(account.Group.id, account.Group.name).order_by(account.Group.name)
         result = await self.session.execute(stmt)
@@ -86,13 +88,13 @@ class UserDomainDTO(SQLAlchemyDTO[account.UserDomain]):
     config = DTOConfig(
         max_nested_depth=1,
         exclude={"id"},
-    )
+    )  # type: ignore
 
 
 class UserDomainRepo(SQLAlchemyAsyncRepository[account.UserDomain]):
     model_type = account.UserDomain
 
-    async def get_all_for_options(self) -> Awaitable[list[tuple[int, str]]]:
+    async def get_all_for_options(self) -> Sequence[Row[tuple[int, str]]]:
 
         stmt = select(account.UserDomain.id, account.UserDomain.domain).order_by(
             account.UserDomain.domain
@@ -110,27 +112,12 @@ class UserGroupRepo(SQLAlchemyAsyncRepository[account.UserGroup]):
     model_type = account.UserGroup
 
 
-class FileAttachmentRepo(SQLAlchemyAsyncRepository[fileobjects.FileAttachment]):
-    model_type = fileobjects.FileAttachment
-
-
-class FileObjectRepo(SQLAlchemyAsyncRepository[fileobjects.FileObject]):
-    model_type = fileobjects.FileObject
-
-    async def get_all_for_options(self) -> Awaitable[list[tuple[int, str]]]:
-        stmt = select(fileobjects.FileObject.id, fileobjects.FileObject.path).order_by(
-            fileobjects.FileObject.path
-        )
-        result = await self.session.execute(stmt)
-        return result.all()
-
-
 # services
 
 T = TypeVar("T")
 
 
-class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
+class LPBaseService(SQLAlchemyAsyncRepositoryService[Any], Generic[T]):
     # this is a base service class that can be inherited by other services
     # it can be used to define common methods for all services
 
@@ -152,7 +139,10 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
             # update instance attributes from data dict
             # handle MutableList fields with in-place mutation to ensure
             # SQLAlchemy change tracking works correctly
-            mapper_relationships = inspect(instance).mapper.relationships
+            state = inspect(instance)
+            if state is None:
+                raise ValueError("Instance state could not be determined for update")
+            mapper_relationships = state.mapper.relationships
             for key, value in data.items():
                 if not hasattr(instance, key):
                     # Allow hook-produced auxiliary keys without breaking updates
@@ -193,6 +183,8 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
                         flag_modified(instance, key)
 
         state = inspect(instance)
+        if state is None:
+            raise ValueError("Instance state could not be determined for update")
         if state.pending or state.transient:
             # New objects are inserted by flush; repository.update() expects an existing row.
             await self.repository.session.flush()
@@ -224,7 +216,7 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
         self,
         instance: Any,
         attr_name: str,
-        related_model: type[DeclarativeBase],
+        related_model: type[Any],
         related_ids: list[int],
         valid_ids: set[int] | None = None,
     ) -> None:
@@ -492,12 +484,10 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[T]):
 
 
 class EnumKeyService(LPBaseService[enumkey.EnumKey]):
-    model_type = enumkey.EnumKey
     repository_type = EnumKeyRepo
 
 
 class UserDomainService(LPBaseService[account.UserDomain]):
-    model_type = account.UserDomain
     repository_type = UserDomainRepo
 
     async def before_update_from_dict(
@@ -509,7 +499,6 @@ class UserDomainService(LPBaseService[account.UserDomain]):
 
 
 class GroupService(LPBaseService[account.Group]):
-    model_type = account.Group
     repository_type = GroupRepo
 
     async def before_update_from_dict(
@@ -538,7 +527,6 @@ class GroupService(LPBaseService[account.Group]):
 
 
 class UserService(LPBaseService[account.User]):
-    model_type = account.User
     repository_type = UserRepo
 
     async def before_update_from_dict(self, instance: account.User, data: dict) -> None:
@@ -559,23 +547,13 @@ class UserService(LPBaseService[account.User]):
             await self.set_file_object(instance, "attachment", data)
 
 
-class FileAttachmentService(LPBaseService[fileobjects.FileAttachment]):
-    model_type = fileobjects.FileAttachment
-    repository_type = FileAttachmentRepo
-
-
-class FileObjectService(LPBaseService[fileobjects.FileObject]):
-    model_type = fileobjects.FileObject
-    repository_type = FileObjectRepo
-
-
 class UserDTO(SQLAlchemyDTO[account.User]):
     """Data Transfer Object for User model"""
 
     config = DTOConfig(
         max_nested_depth=1,
         exclude={"id"},
-    )
+    )  # type: ignore
 
 
 class Model(types.SimpleNamespace):
@@ -586,8 +564,6 @@ class Model(types.SimpleNamespace):
     UserDomain = account.UserDomain
     UserGroup = account.UserGroup
     User = account.User
-    FileAttachment = fileobjects.FileAttachment
-    FileObject = fileobjects.FileObject
 
 
 class Function(types.SimpleNamespace):
@@ -622,10 +598,6 @@ class LPHandler:
         self.repo.UserDomain = lop.Proxy(lambda: UserDomainRepo(session=self.session))
         self.repo.User = lop.Proxy(lambda: UserRepo(session=self.session))
         self.repo.UserGroup = lop.Proxy(lambda: UserGroupRepo(session=self.session))
-        self.repo.FileAttachment = lop.Proxy(
-            lambda: FileAttachmentRepo(session=self.session)
-        )
-        self.repo.FileObject = lop.Proxy(lambda: FileObjectRepo(session=self.session))
 
         # prepare all AsyncServices here, which will be specific for
         # each handler instance
@@ -650,21 +622,11 @@ class LPHandler:
                 session=self.session, repository=self.repo.User.__wrapped__
             )
         )
-        self.service.FileAttachment = lop.Proxy(
-            lambda: FileAttachmentService(
-                session=self.session, repository=self.repo.FileAttachment.__wrapped__
-            )
-        )
-        self.service.FileObject = lop.Proxy(
-            lambda: FileObjectService(
-                session=self.session, repository=self.repo.FileObject.__wrapped__
-            )
-        )
 
-    async def get(
-        self, model: type[DeclarativeBase], id: int
-    ) -> Awaitable[DeclarativeBase | None]:
-        return await model.get(self.session, id)
+    # async def get(
+    #    self, model: type[DeclarativeBase], id: int
+    # ) -> Awaitable[DeclarativeBase | None]:
+    #    return await model.get(self.session, id)
 
     def get_repository(
         self, model_type: type[DeclarativeBase]
