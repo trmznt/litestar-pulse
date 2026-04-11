@@ -132,7 +132,6 @@ def init_app() -> Litestar:
     from litestar_pulse.views.user import UserView
     from litestar_pulse.views.group import GroupView
     from litestar_pulse.views.async_fileupload import AsyncFileUpload
-    from litestar_pulse.views.fileobjects import FileAttachmentView, FileObjectView
     from litestar_pulse.views.api_v1 import API_v1
 
     init_filestorage()
@@ -214,8 +213,6 @@ def init_app() -> Litestar:
             UserDomainView,
             UserView,
             GroupView,
-            FileAttachmentView,
-            FileObjectView,
             API_v1,
             AsyncFileUpload,
         ],
