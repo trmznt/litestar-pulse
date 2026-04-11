@@ -406,7 +406,7 @@ class EnumKeyRegistry:
         cls._category_ids.clear()
         cls._values_by_key.clear()
         cls._values_by_id.clear()
-        cls._version = None
+        cls._version = 0
 
     @classmethod
     def category_id(cls, category_key: str) -> int | None:
@@ -479,7 +479,7 @@ class EnumKeyRegistry:
         return list(cls._values_by_key[category_key].values())
 
     @classmethod
-    def get_all_items(cls, category_key: str) -> list[EnumKeyValue]:
+    def get_all_items(cls, category_key: str) -> list[tuple[int, str]]:
         """Return all cached values for a given category."""
         items = cls.get_all_values(category_key)
         item_list = [(item.id, item.key) for item in items]
@@ -539,7 +539,7 @@ class EnumKeyRegistry:
 class EnumKeyProxy:
     """Descriptor that exposes enum key members through a foreign key column."""
 
-    __registry__: EnumKeyRegistry = EnumKeyRegistry
+    __registry__: type[EnumKeyRegistry] = EnumKeyRegistry
 
     def __init__(self, fk_attribute: str, category_key: str):
         self.fk_attribute = fk_attribute
@@ -612,8 +612,8 @@ class EnumKeyProxy:
         return record
 
 
-_ENUMKEY_TABLE = EnumKey.__table__.name
-_ENUMKEY_VERSION_TABLE = EnumKeyVersion.__table__.name
+_ENUMKEY_TABLE = EnumKey.__table__.name  # type: ignore
+_ENUMKEY_VERSION_TABLE = EnumKeyVersion.__table__.name  # type: ignore
 
 _POSTGRES_FUNCTION_NAME = f"{_ENUMKEY_TABLE}_version_bump_fn"
 _POSTGRES_TRIGGER_NAME = f"{_ENUMKEY_TABLE}_version_bump_trg"
