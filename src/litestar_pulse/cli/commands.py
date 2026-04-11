@@ -3,26 +3,31 @@
 
 from __future__ import annotations
 
-import sys
 import textwrap
 from typing import Any, NoReturn
 
-import nest_asyncio
-
-try:
-    nest_asyncio.apply()
-except Exception:
-    print("nest_asyncio.apply() is not applied", file=sys.stderr)
-
 from contextlib import asynccontextmanager
 import click
+import nest_asyncio
 from litestar import Litestar
 from litestar_pulse.cli.debugging import META_IPDB_FLAG, PulseManagerGroup
 
-from litestar_pulse.db.setup import (
-    list_userdomains,
-    list_users,
-)
+
+_NEST_ASYNCIO_APPLIED = False
+
+
+def _ensure_nested_asyncio() -> None:
+    """Apply nest_asyncio only when interactive async shells need it."""
+
+    global _NEST_ASYNCIO_APPLIED
+    if _NEST_ASYNCIO_APPLIED:
+        return
+
+    try:
+        nest_asyncio.apply()
+        _NEST_ASYNCIO_APPLIED = True
+    except Exception:
+        click.echo("nest_asyncio.apply() was not applied", err=True)
 
 
 @click.group(
@@ -204,18 +209,19 @@ async def pulse_enumkey_list() -> None:
 
 
 @pulsemgr.command(name="shell", help="run IPython shell")
-def run_cli() -> NoReturn:
+def run_cli() -> None:
     """
     CLI entry point for litestar pulsemgr integrated command
     """
     import IPython
 
+    _ensure_nested_asyncio()
     IPython.embed(using="asyncio")
 
 
 @pulsemgr.command(name="run-script", help="run a Python script within a transaction")
 @click.argument("script_path", type=click.Path(exists=True))
-async def runscript_cli(script_path: str) -> NoReturn:
+async def runscript_cli(script_path: str) -> None:
     """
     CLI entry point for litestar pulsemgr to run a Python script within the app context
     """
@@ -242,7 +248,7 @@ async def runscript_cli(script_path: str) -> NoReturn:
 
 
 @pulsemgr.command(name="txn", help="run IPython shell within a transaction")
-async def run_txn_cli() -> NoReturn:
+async def run_txn_cli() -> None:
     """
     CLI entry point for litestar pulsemgr to runn an IPython shell within
     a transaction
@@ -252,6 +258,7 @@ async def run_txn_cli() -> NoReturn:
     from litestar_pulse.db import handler_factory
     import IPython
 
+    _ensure_nested_asyncio()
     dbc = DBConfig()
 
     try:
@@ -283,7 +290,7 @@ async def get_dbhandler():
         await dbc.engine.dispose()
 
 
-def main() -> NoReturn:
+def main() -> None:
     """
     CLI entry point for pulsemgr standalone command
     """
