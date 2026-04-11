@@ -3,17 +3,23 @@
 micromamba install -y uv
 
 # create minimal pyproject.toml
-# project version should be current date + XX (2 digit)
+# project version should be current date
+
+VERSION=$(date +%y%m%d)
 cat >> pyproject.toml <<EOL
 [project]
 name = "messy2-server"
-version = "1"
-requires-python = ">=3.11"
+version = "${VERSION}"
+requires-python = ">=3.12"
 dependencies = []
 EOL
 
 # add internal dependencies
-uv add envs/tagato
-uv add envs/litestar-pulse
+uv add --editable envs/tagato
+uv add --editable envs/litestar-pulse
+uv sync
 
-# create instance directory
+# create instances directory
+mkdir -p instances
+
+# EOF
