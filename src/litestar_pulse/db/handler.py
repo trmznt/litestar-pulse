@@ -33,7 +33,7 @@ from litestar.dto import DTOConfig
 
 from . import set_handler_class, handler_factory, get_handler
 from .models.meta import LPAsyncSession
-from .models import account, enumkey, fileobjects  # noqa: F401
+from .models import account, enumkey  # noqa: F401
 from ..lib.fileupload import FileUploadProxy
 
 import lazy_object_proxy as lop
