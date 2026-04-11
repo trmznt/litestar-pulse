@@ -9,7 +9,7 @@ micromamba install -y uv
 # project version should be current date
 
 VERSION=$(date +%y%m%d)
-cat >> pyproject.toml <<EOL
+cat > pyproject.toml <<EOL
 [project]
 name = "messy2-server"
 version = "${VERSION}"
