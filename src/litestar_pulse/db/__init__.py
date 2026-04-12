@@ -9,7 +9,7 @@ __license__ = "MPL-2.0"
 
 
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 
 __session_class__: type[Any] | None = None
@@ -95,6 +95,33 @@ def get_handler() -> Any:
             "Ensure LPController.init_view() has been called for this request."
         )
     return handler
+
+
+__initdb_function_factory__: Callable[..., Any] | None = None
+
+
+def set_initdb_function_factory(func: Callable[..., Any]) -> None:
+    """Set the global database initialization function for the application.
+
+    Args:
+        func: The database initialization function to set.
+    """
+    global __initdb_function_factory__
+    __initdb_function_factory__ = func
+
+
+def get_initdb_function_factory() -> Callable[..., Any]:
+    """Get the global database initialization function for the application.
+
+    Returns:
+        The database initialization function.
+    """
+    if __initdb_function_factory__ is None:
+        raise RuntimeError(
+            "Database initialization function factory is not set. "
+            "Please set it using set_initdb_function_factory()."
+        )
+    return __initdb_function_factory__
 
 
 # EOF

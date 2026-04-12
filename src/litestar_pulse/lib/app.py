@@ -9,9 +9,11 @@ __license__ = "MPL-2.0"
 
 import os
 from pathlib import Path
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
+from typing import Any
 
 import ipdb
+import yaml
 
 from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,6 +57,7 @@ from litestar_pulse.config.app import (
     logger,
 )
 from litestar_pulse.config.filestorage import init_filestorage
+from litestar_pulse.db import set_initdb_function_factory
 from litestar_pulse.db.models import account
 from litestar_pulse.db.models.enumkey import EnumKeyRegistry
 from litestar_pulse.lib.debugger import SelectiveDebugger
@@ -116,12 +119,31 @@ toolbar_config = LitestarDebugToolbarConfig(
 )
 
 
+def lp_initdb_function_factory() -> Callable[..., Any]:
+
+    from litestar_pulse.db.initdb import initialize_database
+
+    return initialize_database
+
+
+def read_yaml_config(file_path: str) -> dict:
+    if not os.path.exists(file_path):
+        logger.warning(
+            f"Configuration file '{file_path}' not found. Using empty config."
+        )
+        return {}
+    with open(file_path, "r") as f:
+        return yaml.safe_load(f)
+
+
 @get("/favicon.ico", status_code=HTTP_204_NO_CONTENT)
 def handle_favicon() -> None:
     return None
 
 
-def init_app() -> Litestar:
+def init_app(
+    initdb_function_factory: Callable[[], Any] = lp_initdb_function_factory,
+) -> Litestar:
 
     from litestar_pulse.views.components import user_menu
     from litestar_pulse.views.home import HomeView
@@ -133,6 +155,14 @@ def init_app() -> Litestar:
     from litestar_pulse.views.group import GroupView
     from litestar_pulse.views.async_fileupload import AsyncFileUpload
     from litestar_pulse.views.api_v1 import API_v1
+
+    # load YAML config.yaml and secret.yaml
+
+    config = read_yaml_config("config.yaml")
+    secret = read_yaml_config("secret.yaml")
+    config.update(secret)
+
+    set_initdb_function_factory(initdb_function_factory)
 
     init_filestorage()
 

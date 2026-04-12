@@ -54,16 +54,17 @@ def pulsemgr(use_ipdb: bool) -> None:
 async def pulse_db_init() -> None:
     """Initialize the database and populate initial data."""
 
-    from litestar_pulse.db.initdb import initialize_database
+    from litestar_pulse.db import get_initdb_function_factory
 
     click.echo("Initializing database...")
-    created_enumkeys, created_groups, created_domains, created_users = (
-        await initialize_database()
-    )
+
+    initdb_factory = get_initdb_function_factory()
+    initdb_funcs = initdb_factory()
+    results = await initdb_funcs()
     click.echo(
         "Ensured schema. Added "
-        f"{created_enumkeys} enumkey(s), {created_groups} group(s), {created_domains} domain(s), "
-        f"and {created_users} user(s)."
+        f"{results.get('enumkeys', 0)} enumkey(s), {results.get('groups', 0)} group(s), "
+        f"{results.get('domains', 0)} domain(s), and {results.get('users', 0)} user(s)."
     )
 
 
