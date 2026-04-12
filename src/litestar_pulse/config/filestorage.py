@@ -4,6 +4,7 @@ import pathlib
 from advanced_alchemy.types.file_object import FileObject, StoredObject, storages
 from advanced_alchemy.types.file_object.backends.fsspec import FSSpecBackend
 
+DB_DIR = pathlib.Path.cwd() / "db"
 STORAGE_DIR = pathlib.Path.cwd() / "storage/lp"
 TMP_UPLOAD_DIR = pathlib.Path.cwd() / "tmp_uploads"
 LP_STORAGE = "lp_storage"
@@ -11,6 +12,7 @@ LP_STORAGE = "lp_storage"
 
 def init_filestorage() -> None:
 
+    DB_DIR.mkdir(parents=True, exist_ok=True)
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     TMP_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
