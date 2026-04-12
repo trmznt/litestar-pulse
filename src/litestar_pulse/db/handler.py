@@ -272,7 +272,7 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[Any], Generic[T]):
 
         backend = file_object.backend
         if hasattr(backend, "fs") and hasattr(backend, "_prepare_path"):
-            full_path = str(backend._prepare_path(file_object.path))
+            full_path = str(backend._prepare_path(file_object.path))  # type: ignore
             logger.info(
                 "FileObject save via source_path/fsspec put_file: source=%s dest=%s",
                 source_path,
@@ -285,16 +285,16 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[Any], Generic[T]):
                 def _mkdir() -> None:
                     dst.parent.mkdir(parents=True, exist_ok=True)
 
-                await anyio.to_thread.run_sync(_mkdir)
-                await anyio.to_thread.run_sync(shutil.copy2, src, dst)
+                await anyio.to_thread.run_sync(_mkdir)  # type: ignore
+                await anyio.to_thread.run_sync(shutil.copy2, src, dst)  # type: ignore
             else:
-                await anyio.to_thread.run_sync(
+                await anyio.to_thread.run_sync(  # type: ignore
                     backend.fs.put_file, str(source_path), full_path
                 )
 
             # Keep commonly used metadata fields in sync when available.
             try:
-                info = await anyio.to_thread.run_sync(backend.fs.info, full_path)
+                info = await anyio.to_thread.run_sync(backend.fs.info, full_path)  # type: ignore
                 if isinstance(info, dict) and "size" in info:
                     file_object.size = int(info["size"])
             except Exception:
@@ -307,7 +307,7 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[Any], Generic[T]):
             source_path,
             file_object.path,
         )
-        file_object.source_path = str(source_path)
+        file_object.source_path = str(source_path)  # type: ignore
         await file_object.save_async()
 
     async def create_file_object(self, instance: Any, uploaded_file: Any) -> FileObject:

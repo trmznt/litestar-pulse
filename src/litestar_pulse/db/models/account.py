@@ -247,7 +247,7 @@ class User(IdentityUUIDv7UserAuditBase, LPAttachment, RoleMixin):
 
     userdata: Mapped[dict[int, UserData]] = relationship(
         "UserData",
-        collection_class=column_mapped_collection(UserData.key_id),
+        collection_class=column_mapped_collection(UserData.key_id),  # type: ignore
         cascade="all, delete, delete-orphan",
         foreign_keys=[UserData.user_id],
         back_populates="user",
@@ -458,7 +458,7 @@ class UserInstance(msgspec.Struct):
         raise NotImplementedError()
 
 
-UserDomain.user_count: Mapped[int] = deferred(
+UserDomain.user_count: Mapped[int] = deferred(  # type: ignore
     column_property(
         select(func.count(User.id))
         .where(User.domain_id == UserDomain.id)
