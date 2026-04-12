@@ -37,6 +37,9 @@ uMAMBA_ENVNAME="${uMAMBA_ENVNAME:-litestar-pulse}"
 mkdir -p ${BASEDIR}/instances/
 
 # for dev: source <(curl -L https://raw.githubusercontent.com/vivaxgen/vvg-box/refs/heads/dev/install.sh)
+
+# create an OMIT variable and add snakemake if the OMIT variable is already exists
+OMIT="${OMIT:-}:snakemake"
 source <(curl -L https://raw.githubusercontent.com/vivaxgen/vvg-box/main/install.sh)
 
 echo "Cloning tagato"
@@ -50,8 +53,8 @@ git clone --depth 1 https://github.com/trmznt/litestar-pulse.git ${ENVS_DIR}/lit
 source ${ENVS_DIR}/litestar-pulse/etc/inst-scripts/inst-deps.sh
 
 # add to installed-repo.txt
-echo "litestar-pulse" >> ${ETC_DIR}/installed-repo.txt
 echo "tagato" >> ${ETC_DIR}/installed-repo.txt
+echo "litestar-pulse" >> ${ETC_DIR}/installed-repo.txt
 
 echo
 echo "litestar-pulse has been successfully installed. "
