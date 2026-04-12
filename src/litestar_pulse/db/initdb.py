@@ -10,7 +10,8 @@ __license__ = "MPL-2.0"
 
 import logging
 import secrets
-from typing import Any, Dict, Sequence
+from collections.abc import Sequence, Callable
+from typing import Any, Dict
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -28,8 +29,42 @@ from litestar_pulse.db.fixtures import seed
 
 SEED = seed
 
+__initdb_funcs__ = [
+    lambda session, result_dict: initialize_lp_seed(
+        session=session, result_dict=result_dict
+    ),
+]
 
-async def initialize_database(seed_module: Any = SEED) -> tuple[int, int, int, int]:
+
+def add_initdb_function(func: Callable[..., Any]) -> None:
+    global __initdb_funcs__
+    __initdb_funcs__.append(func)
+
+
+async def initialize_lp_seed(
+    session: AsyncSession, result_dict: dict[str, Any]
+) -> bool:
+    enumkey_payloads, group_payloads, domain_payloads = _load_fixture_payloads(SEED)
+
+    result_dict["enumkeys"] = await _ensure_enumkeys(session, enumkey_payloads)
+    await EnumKeyRegistry.ensure_current(session)
+    result_dict["groups"], group_map = await _ensure_groups(session, group_payloads)
+    result_dict["domains"], domain_map, result_dict["users"] = await _ensure_domains(
+        session,
+        domain_payloads,
+        group_map,
+    )
+    if (
+        result_dict["enumkeys"]
+        or result_dict["domains"]
+        or result_dict["groups"]
+        or result_dict["users"]
+    ):
+        return True
+    return False
+
+
+async def initialize_database(seed_module: Any = SEED) -> dict[str, int]:
     """Create the database schema and seed example data."""
 
     config = DBConfig()
@@ -40,32 +75,22 @@ async def initialize_database(seed_module: Any = SEED) -> tuple[int, int, int, i
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    created_enumkeys = 0
-    created_groups = 0
-    created_domains = 0
-    created_users = 0
-    enumkey_payloads, group_payloads, domain_payloads = _load_fixture_payloads(
-        seed_module
-    )
+    created = {}
 
     try:
         async with session_factory() as session:
-            created_enumkeys = await _ensure_enumkeys(session, enumkey_payloads)
-            await EnumKeyRegistry.ensure_current(session)
-            created_groups, group_map = await _ensure_groups(session, group_payloads)
-            created_domains, domain_map, created_users = await _ensure_domains(
-                session,
-                domain_payloads,
-                group_map,
-            )
-            if created_enumkeys or created_domains or created_groups or created_users:
+            results = []
+            for func in __initdb_funcs__:
+                results.append(await func(session=session, result_dict=created))
+
+            if all(results):
                 await session.commit()
             else:
                 await session.rollback()
     finally:
         await engine.dispose()
 
-    return created_enumkeys, created_groups, created_domains, created_users
+    return created
 
 
 def _load_fixture_payloads(seed_module: Any) -> tuple[
