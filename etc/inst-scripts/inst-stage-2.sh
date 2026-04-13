@@ -1,5 +1,6 @@
 
 (
+echo "Performing 2nd stage installation for Litestar-Pulse"
 
 # run this under the base directory of the installation
 cd ${VVG_BASEDIR}
