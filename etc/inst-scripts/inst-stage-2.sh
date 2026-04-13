@@ -12,7 +12,7 @@ micromamba install -y uv
 VERSION=$(date +%y%m%d)
 cat > pyproject.toml <<EOL
 [project]
-name = "${uMAMBA_ENVNAME}"
+name = "${uMAMBA_ENVNAME}-venv"
 version = "${VERSION}"
 requires-python = ">=3.12"
 dependencies = []
