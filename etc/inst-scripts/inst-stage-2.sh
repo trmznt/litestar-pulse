@@ -11,7 +11,7 @@ micromamba install -y uv
 VERSION=$(date +%y%m%d)
 cat > pyproject.toml <<EOL
 [project]
-name = "messy2-server"
+name = "${uMAMBA_ENVNAME}"
 version = "${VERSION}"
 requires-python = ">=3.12"
 dependencies = []

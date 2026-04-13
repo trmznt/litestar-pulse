@@ -50,7 +50,7 @@ echo "Cloning litestar-pulse"
 git clone --depth 1 https://github.com/trmznt/litestar-pulse.git ${ENVS_DIR}/litestar-pulse
 
 # perform 2nd stage installation for litestar-pulse
-source ${ENVS_DIR}/litestar-pulse/etc/inst-scripts/inst-deps.sh
+source ${ENVS_DIR}/litestar-pulse/etc/inst-scripts/inst-stage-2.sh
 
 # add to installed-repo.txt
 echo "tagato" >> ${ETC_DIR}/installed-repo.txt
