@@ -233,7 +233,7 @@ async def runscript_cli(script_path: str) -> None:
     dbc = DBConfig()
 
     try:
-        async with dbc.session_factory() as session:
+        async with dbc.session_factory() as session:  # type: ignore
             dbhandler = handler_factory(session)
             print(f"Running script '{script_path}' with database handler (dbh)...")
             with open(script_path, "r") as f:
@@ -263,7 +263,7 @@ async def run_txn_cli() -> None:
     dbc = DBConfig()
 
     try:
-        async with dbc.session_factory() as session:
+        async with dbc.session_factory() as session:  # type: ignore
             dbhandler = handler_factory(session)
             print(
                 "Starting IPython shell with database session and handler (dbs, dbh)..."
@@ -284,7 +284,7 @@ async def get_dbhandler():
     dbc = DBConfig()
 
     try:
-        async with dbc.session_factory() as session:
+        async with dbc.session_factory() as session:  # type: ignore
             dbhandler = handler_factory(session)
             yield dbhandler
     finally:
