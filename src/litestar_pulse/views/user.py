@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+
 __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
+
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -30,6 +32,11 @@ from ..lib.popup import modal_delete, modal_info, modal_submit
 
 
 from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from litestar.datastructures import MultiDict
+    from litestar_pulse.views.baseview import LPController
+    from sqlalchemy.exc import IntegrityError
 
 
 class UserForm(fb.ModelForm):
@@ -60,7 +67,7 @@ class UserForm(fb.ModelForm):
     )
     attachment = fb.FileUploadField(label="Attachment", required=False)
 
-    async def set_layout(self, controller: Any = None) -> t.Tag:
+    async def set_layout(self, controller: LPModelView | None = None) -> t.Tag:
         form_layout = t.fragment()[
             f.fieldset(name="main")[
                 f.InlineInput()[
@@ -89,7 +96,7 @@ class UserForm(fb.ModelForm):
         return form_layout
 
     def process_integrity_error(
-        self, error: Exception, data: dict[str, Any], dbsession: AsyncSession
+        self, error: IntegrityError, data: dict[str, Any], dbsession: AsyncSession
     ) -> None:
         detail = error.args[0]
         if "UNIQUE" in detail or "UniqueViolation" in detail:
@@ -135,7 +142,7 @@ class UserView(LPModelView):
     ) -> tuple[t.Tag, str]:
         return generate_user_table(users, self.req)
 
-    async def get_bottom_panel(self, instance: Any) -> t.Tag:
+    async def get_bottom_panel(self, instance: Any) -> dict[str, t.Tag | str]:
 
         usergroups = await instance.awaitable_attrs.usergroups
 
@@ -148,7 +155,7 @@ class UserView(LPModelView):
 
     # custom action
 
-    async def additional_action(self, data: dict[str, Any]) -> Any:
+    async def additional_action(self, data: MultiDict[Any]) -> Any:
 
         dbids = [int(x) for x in data.getall("usergroup-ids", [])]
         try:
@@ -226,7 +233,7 @@ class UserView(LPModelView):
         request: Request,
         db_session: AsyncSession,
         transaction: AsyncSession,
-    ) -> Template:
+    ) -> Template | Response:
         """
         Handle the password update form submission
         """
@@ -251,9 +258,9 @@ class UserView(LPModelView):
             )
 
         form_data = await request.form()
-        current_password = form_data.get("cur_password")
-        password = form_data.get("new_password")
-        confirm_password = form_data.get("confirm_password")
+        current_password = str(form_data.get("cur_password"))
+        password = str(form_data.get("new_password"))
+        confirm_password = str(form_data.get("confirm_password"))
 
         # validate current_password with user
         if not await crypt.verify_password(current_password, user_credential):
@@ -439,7 +446,7 @@ def generate_usergroup_table(
 
 async def generate_usergroup_removal_popup(
     controller: LPModelView, dbids: list[int]
-) -> t.Tag:
+) -> t.Tag | Template:
 
     if not any(dbids):
         return modal_info(
@@ -489,7 +496,7 @@ async def generate_usergroup_removal_popup(
     )
 
 
-async def remove_usergroup(controller: LPModelView, dbids: list[int]) -> Response:
+async def remove_usergroup(controller: LPModelView, dbids: list[int]) -> None:
 
     if not any(dbids):
         flash(controller.req, "No user groups selected for removal", category="warning")
@@ -523,7 +530,7 @@ async def remove_usergroup(controller: LPModelView, dbids: list[int]) -> Respons
 
 async def generate_usergroup_modify_role_popup(
     controller: LPModelView, dbids: list[int]
-) -> t.Tag:
+) -> t.Tag | Template:
 
     if not any(dbids):
         return modal_info(
@@ -587,9 +594,7 @@ async def generate_usergroup_modify_role_popup(
     )
 
 
-async def modify_usergroup_role(
-    controller: LPModelView, data: dict[str, Any]
-) -> Response:
+async def modify_usergroup_role(controller: LPModelView, data: dict[str, Any]) -> None:
 
     usergroup_data = parse_indexed_form(data)["usergroup"]
 
@@ -629,7 +634,7 @@ async def modify_usergroup_role(
 
 async def generate_usergroup_add_popup(
     controller: LPModelView, data: dict[str, Any]
-) -> t.Tag:
+) -> t.Tag | Template:
 
     try:
         user_id = int(data.get("user-id", 0) or 0)
@@ -732,7 +737,7 @@ async def generate_usergroup_add_popup(
     )
 
 
-async def add_usergroup(controller: LPModelView, data: dict[str, Any]) -> Response:
+async def add_usergroup(controller: LPModelView, data: MultiDict[Any]) -> None:
 
     try:
         user_id = int(data.get("user-id", 0) or 0)

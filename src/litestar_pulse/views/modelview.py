@@ -11,7 +11,7 @@ __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
 
 import pathlib
-from typing import Any
+from typing import Any, TYPE_CHECKING, NotRequired, TypedDict, cast
 from uuid import UUID
 from enum import Enum
 
@@ -36,6 +36,16 @@ from ..lib import validators as v
 from ..lib import compositetags as ct
 from ..lib import formbuilder as fb
 from .baseview import LPBaseView
+
+if TYPE_CHECKING:
+    from litestar.datastructures import MultiDict
+
+
+class PanelContent(TypedDict):
+    html: t.Tag | str
+    javascript_code: NotRequired[str]
+    pyscript_code: NotRequired[str]
+    scriptlink_lines: NotRequired[str]
 
 
 def form_submit_bar(create: bool = False) -> t.Tag:
@@ -114,7 +124,7 @@ class LPModelView(LPBaseView):
             "load": [joinedload(self.model_type.updated_by)],
         }
 
-    async def additional_action(self, data: dict[str, Any]) -> Any:
+    async def additional_action(self, data: MultiDict[Any] | dict[str, Any]) -> Any:
         """
         Handle additional actions that are not covered by the default implementations.
         This method can be overridden in derived classes to handle custom actions.
@@ -153,7 +163,7 @@ class LPModelView(LPBaseView):
             ]
         return None
 
-    async def attachment(self, dbid: int | None = None) -> File:
+    async def attachment(self, dbid: int | None = None) -> File | None:
         """
         Render attachment page
         """
@@ -166,6 +176,7 @@ class LPModelView(LPBaseView):
                 filename=file_object.metadata.get("filename"),
                 content_disposition_type="inline",
             )
+        return None
 
     def get_files_url(self, filekey: str, instance: Any) -> str:
         """
@@ -248,7 +259,7 @@ class LPModelView(LPBaseView):
         return await repo.list(**options)
 
     async def get_model_instance(
-        self, dbid: int | None = None, uuid: UUID | None = None
+        self, dbid: int | None = None, uuid: UUID | str | None = None
     ) -> Any:
         """
         Retrieve model instance by ID or UUID
@@ -293,7 +304,7 @@ class LPModelView(LPBaseView):
 
     async def view(
         self, dbid: int | None = None, uuid: str | None = None
-    ) -> dict[str, t.Tag | str]:
+    ) -> dict[str, t.Tag | str | int]:
         """
         Render the user domain detail page by ID or UUID
         """
@@ -321,7 +332,7 @@ class LPModelView(LPBaseView):
 
     async def edit(
         self, dbid: int | None = None, uuid: str | None = None
-    ) -> dict[str, t.Tag | str]:
+    ) -> dict[str, t.Tag | str | int]:
         """
         Render the user domain edit page by ID or UUID
         """
@@ -358,8 +369,8 @@ class LPModelView(LPBaseView):
         )
 
     async def update(
-        self, dbid: int | None = None, data: dict[str, Any] = {}
-    ) -> Response[str]:
+        self, dbid: int | None = None, data: MultiDict[Any] | dict[str, Any] = {}
+    ) -> Response[str] | Template:
         """
         Handle the user domain update by ID or UUID
         """
@@ -462,7 +473,7 @@ class LPModelView(LPBaseView):
         )
         return Redirect(path=self.req.url_for(next_url, dbid=dbid))
 
-    async def action(self, data: dict[str, Any]) -> Any:
+    async def action(self, data: MultiDict[Any]) -> Any:
         """
         Handle the delete confirmation,
         """
@@ -521,14 +532,14 @@ class LPModelView(LPBaseView):
 
     def compose_layout(
         self,
-        main_panel: dict[str, t.Tag | str] | None = None,
-        top_panel: dict[str, t.Tag | str] | None = None,
-        left_top_panel: dict[str, t.Tag | str] | None = None,
-        right_top_panel: dict[str, t.Tag | str] | None = None,
-        left_bottom_panel: dict[str, t.Tag | str] | None = None,
-        right_bottom_panel: dict[str, t.Tag | str] | None = None,
-        bottom_panel: dict[str, t.Tag | str] | None = None,
-    ) -> dict[str, t.Tag | str]:
+        main_panel: PanelContent | None = None,
+        top_panel: PanelContent | None = None,
+        left_top_panel: PanelContent | None = None,
+        right_top_panel: PanelContent | None = None,
+        left_bottom_panel: PanelContent | None = None,
+        right_bottom_panel: PanelContent | None = None,
+        bottom_panel: PanelContent | None = None,
+    ) -> dict[str, t.Tag | str | int]:
         """
         Compose the layout for the view.
         Each of dictionary parameters is expected to have an "html" key with the HTML content,
@@ -559,7 +570,7 @@ class LPModelView(LPBaseView):
             fragments.add(t.div(class_="row", name="main_panel")[main_panel["html"]])
         if left_bottom_panel or right_bottom_panel:
             fragments.add(
-                t.br,
+                t.br(),
                 t.div(class_="row", name="left_right_bottom_panel")[
                     t.div(class_="col-md-6", name="left_bottom_panel")[
                         left_bottom_panel["html"] if left_bottom_panel else ""
@@ -571,7 +582,7 @@ class LPModelView(LPBaseView):
             )
         if bottom_panel:
             fragments.add(
-                t.hr,
+                t.hr(),
                 t.div(class_="row", name="bottom_panel")[bottom_panel["html"]],
             )
 
@@ -594,7 +605,7 @@ class LPModelView(LPBaseView):
             if "pyscript_code" in panel:
                 pyscode.append(panel["pyscript_code"])
             if "scriptlink_lines" in panel:
-                scriptlinks.extend(panel["scriptlink_lines"])
+                scriptlinks.append(panel["scriptlink_lines"])
 
         return dict(
             html=fragments,
@@ -603,55 +614,54 @@ class LPModelView(LPBaseView):
             scriptlink_lines="\n".join(scriptlinks),
         )
 
-    async def get_main_panel(self, instance: Any) -> dict[str, t.Tag | str] | None:
+    async def get_main_panel(self, instance: Any) -> PanelContent | None:
         """
         Get the main panel for the given instance, by default it will show the instance detail
         """
 
         form = self.model_form(instance)
 
-        return await form.html_form(
-            request=self.req,
-            readonly=True,
-            editable=True,
-            controller=self,
+        return cast(
+            PanelContent,
+            await form.html_form(
+                request=self.req,
+                readonly=True,
+                editable=True,
+                controller=self,
+            ),
         )
 
-    async def get_top_panel(self, instance: Any) -> dict[str, t.Tag | str] | None:
+    async def get_top_panel(self, instance: Any) -> PanelContent | None:
         """
         Get the top panel for the given instance, by default it will show the model title
         """
         return None
 
-    async def get_bottom_panel(self, instance: Any) -> dict[str, t.Tag | str] | None:
+    async def get_bottom_panel(self, instance: Any) -> PanelContent | None:
         """
         Get the bottom panel for the given instance, by default it will show nothing
         """
         return None
 
-    async def get_left_top_panel(self, instance: Any) -> dict[str, t.Tag | str] | None:
+    async def get_left_top_panel(self, instance: Any) -> PanelContent | None:
         """
         Get the left top panel for the given instance, by default it will show nothing
         """
         return None
 
-    async def get_right_top_panel(self, instance: Any) -> dict[str, t.Tag | str] | None:
+    async def get_right_top_panel(self, instance: Any) -> PanelContent | None:
         """
         Get the right top panel for the given instance, by default it will show nothing
         """
         return None
 
-    async def get_left_bottom_panel(
-        self, instance: Any
-    ) -> dict[str, t.Tag | str] | None:
+    async def get_left_bottom_panel(self, instance: Any) -> PanelContent | None:
         """
         Get the left bottom panel for the given instance, by default it will show nothing
         """
         return None
 
-    async def get_right_bottom_panel(
-        self, instance: Any
-    ) -> dict[str, t.Tag | str] | None:
+    async def get_right_bottom_panel(self, instance: Any) -> PanelContent | None:
         """
         Get the right bottom panel for the given instance, by default it will show nothing
         """

@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from litestar.datastructures import MultiDict
+
 __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
@@ -477,7 +479,7 @@ class LPBaseView(LPController):
         form_data = await request.form()
         return await self.action(form_data)
 
-    async def action(self, data: dict[str, Any]) -> Any:
+    async def action(self, data: MultiDict[Any]) -> Any:
         """
         Handle action request
         """
@@ -487,7 +489,7 @@ class LPBaseView(LPController):
     async def delete_html(
         self,
         request: Request,
-        data: dict[str, Any],
+        data: MultiDict[Any],
         db_session: AsyncSession,
         transaction: AsyncSession,
     ) -> Redirect:

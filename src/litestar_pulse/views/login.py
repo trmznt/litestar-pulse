@@ -62,13 +62,13 @@ class LoginView(Controller):
         )
 
     @post("/login", name="do_login")
-    async def do_login(self, request: Request, transaction: AsyncSession) -> Template:
+    async def do_login(self, request: Request, transaction: AsyncSession) -> Response:
         """
         Handle login form submission
         """
         form_data = await request.form()
-        username = form_data.get("username")
-        password = form_data.get("password")
+        username = str(form_data.get("username"))
+        password = str(form_data.get("password"))
         came_from = form_data.get("came_from", "/")
 
         user = await User.get_by_login(transaction, username)
@@ -80,7 +80,7 @@ class LoginView(Controller):
         return Redirect(path=came_from, status_code=303)
 
     @get("/logout", name="logout")
-    async def logout(self, request: Request) -> Template:
+    async def logout(self, request: Request) -> Response:
         """
         Handle user logout
         """

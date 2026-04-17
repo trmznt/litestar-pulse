@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.exc import IntegrityError
 
 
 class UserDomainForm(fb.ModelForm):
@@ -46,7 +47,7 @@ class UserDomainForm(fb.ModelForm):
     referer = fb.StringField(label="Referer", required=True, max_length=128)
     autoadd = fb.CheckboxField(label="Auto Add", required=False)
     files = fb.FilePondUploadField(
-        label="Files", required=False, categories=["General", "Contract"]
+        label="Files", required=False, categories={"General", "Contract"}
     )
 
     async def set_layout(self, controller: Any = None) -> t.Tag:
@@ -75,7 +76,7 @@ class UserDomainForm(fb.ModelForm):
         return form_layout
 
     def process_integrity_error(
-        self, error: Exception, data: dict[str, Any], dbsession: AsyncSession
+        self, error: IntegrityError, data: dict[str, Any], dbsession: AsyncSession
     ) -> None:
         detail = error.args[0]
         if "UNIQUE" in detail or "UniqueViolation" in detail:
