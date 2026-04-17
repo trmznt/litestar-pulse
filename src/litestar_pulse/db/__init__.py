@@ -11,6 +11,8 @@ __license__ = "MPL-2.0"
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Callable
 
+from ..config.app import logger
+
 
 __session_class__: type[Any] | None = None
 
@@ -52,6 +54,7 @@ def set_handler_class(handler_class: type[Any]) -> None:
     """
     global __handler_class__
     __handler_class__ = handler_class
+    logger.info(f"Handler class set to {handler_class}")
 
 
 def handler_factory(session: Any) -> Any:
@@ -67,6 +70,7 @@ def handler_factory(session: Any) -> Any:
         raise RuntimeError(
             "Handler class is not set. Please set it using set_handler_class()."
         )
+    logger.info(f"Creating handler instance with session: {session}")
     return __handler_class__(session)
 
 
