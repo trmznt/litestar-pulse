@@ -11,6 +11,7 @@ import click
 import nest_asyncio
 from litestar import Litestar
 from litestar_pulse.cli.debugging import META_IPDB_FLAG, PulseManagerGroup
+from litestar_pulse.config.app import logger
 
 
 _NEST_ASYNCIO_APPLIED = False
@@ -56,7 +57,7 @@ async def pulse_db_init() -> None:
 
     from litestar_pulse.db import get_initdb_function_factory
 
-    click.echo("Initializing database...")
+    logger.info("Initializing database...")
 
     initdb_factory = get_initdb_function_factory()
     initdb_funcs = initdb_factory()
