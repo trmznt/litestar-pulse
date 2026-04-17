@@ -11,7 +11,17 @@ __license__ = "MPL-2.0"
 
 
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Self, Any, Generic, TypeVar, get_args, Optional, Type
+from typing import (
+    TYPE_CHECKING,
+    Self,
+    Any,
+    Generic,
+    Sequence,
+    TypeVar,
+    get_args,
+    Optional,
+    Type,
+)
 from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 from functools import cached_property
@@ -61,7 +71,7 @@ class UUIDv7UniqueKey(SentinelMixin):
     uuid: Mapped[UUID] = mapped_column(default=uuid7, unique=True, sort_order=-100)
     """UUID unique key column."""
 
-    def __init__(self, **kwargs: any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         # Ensure uuid exists before SQLAlchemy starts its work
         kwargs.setdefault("uuid", uuid7())
         super().__init__(**kwargs)
@@ -102,10 +112,10 @@ class UpdatedByColumn:
 
         # Updating a User by itself can temporarily produce a self-referential
         # many-to-one dependency graph; post_update breaks that cycle safely.
-        if cls.__name__ == "User":
+        if cls.__name__ == "User":  # type: ignore[comparison-overlap]
             relation_kwargs["post_update"] = True
 
-        return relationship("User", **relation_kwargs)
+        return relationship("User", **relation_kwargs)  # type: ignore[return-value]
 
     @cached_property
     def updated_by_login(self) -> str:
@@ -114,16 +124,16 @@ class UpdatedByColumn:
 
 class _FileUtilityMixin:
 
-    __storage_backend__: str = None
+    __storage_backend__: str | None = None
 
     @classmethod
-    def get_storage_backend(cls) -> str:
+    def get_storage_backend(cls) -> str | None:
         return cls.__storage_backend__
 
-    def get_fileobject_storage_path(self, filename: str = "") -> str:
+    def get_fileobject_storage_path(self, filename: str = "") -> tuple[str, str]:
         # generate a file path for the given uuid using the first 2 characters as subdirectories
         class_name = self.__class__.__name__.lower()
-        uuid = str(self.uuid)
+        uuid = str(self.uuid)  # type: ignore[attr-defined]
         filename = filename or (fastnanoid.generate(size=8) + "-db")
         return f"{class_name}/{uuid[-2:]}/{uuid[2:4]}/{uuid}/{filename}", filename
 
@@ -135,7 +145,7 @@ class _FileUtilityMixin:
         description: str = "",  # description of the file
         updated_by_id: int = 0,  # user id of the updater, for now set to 0
         updated_at: int = 0,  # timestamp of the update as integer epoch UTC
-    ) -> dict[str, str]:
+    ) -> dict[str, str | int]:
         return dict(
             filename=filename,
             content_type=content_type,
@@ -181,14 +191,16 @@ class HelperMethodMixin:
     """
 
     @classmethod
-    async def get(cls, dbt: AsyncSession, dbid: int | None = None, **kwargs) -> Self:
+    async def get(
+        cls, dbt: AsyncSession, dbid: int | None = None, **kwargs
+    ) -> Optional[Self]:
         """
         Get instance by ID or other unique fields
         """
 
         stmt = select(cls)
         if dbid is not None:
-            stmt = stmt.where(cls.id == dbid)
+            stmt = stmt.where(cls.id == dbid)  # type: ignore[attr-defined]
         for key, value in kwargs.items():
             column = getattr(cls, key, None)
             if column is not None:
@@ -197,7 +209,7 @@ class HelperMethodMixin:
         return result.scalar_one_or_none()
 
     @classmethod
-    async def get_all(cls, dbt: AsyncSession, **kwargs) -> list[Self]:
+    async def get_all(cls, dbt: AsyncSession, **kwargs) -> Sequence[Self]:
         """
         Get all instances of the model
         """
@@ -221,12 +233,12 @@ class RoleMixin:
     # __managing_roles and __modifying_roles also infer __viewing_roles
 
     @hybrid_property
-    def is_admin(self) -> bool:
+    def is_admin(self) -> bool:  # type: ignore[no-redef]
         return getattr(self, "role", None) == "admin"
 
-    @is_admin.expression
-    def is_admin(cls):
-        return cls.role == "admin"
+    @is_admin.expression  # type: ignore[no-redef]
+    def is_admin(cls) -> bool:
+        return cls.role == "admin"  # type: ignore[return-value]
 
     @classmethod
     def can_manage(cls, roles: set[str]) -> bool:
@@ -242,7 +254,7 @@ class RoleMixin:
 
     @classmethod
     def can_delete(cls, roles: set[str]) -> bool:
-        return cls.can_manage(cls, roles) or bool(cls.__deleting_roles__ & roles)
+        return cls.can_manage(roles) or bool(cls.__deleting_roles__ & roles)
 
 
 @declarative_mixin
