@@ -36,4 +36,8 @@ logger = logging_config.configure()("litestar-pulse")
 
 session_config = ServerSideSessionConfig()
 
+general_config = {
+    "title": "Litestar-Pulse",
+}
+
 # EOF
