@@ -10,6 +10,7 @@ __license__ = "MPL-2.0"
 import os
 from pathlib import Path
 from collections.abc import AsyncGenerator, Callable
+from functools import cache
 from typing import Any
 
 import ipdb
@@ -55,6 +56,7 @@ from litestar_pulse.config.app import (
     template_config,
     flash_config,
     logger,
+    general_config,
 )
 from litestar_pulse.config.filestorage import init_filestorage
 from litestar_pulse.db import set_initdb_function_factory
@@ -157,10 +159,10 @@ def init_app(
     from litestar_pulse.views.api_v1 import API_v1
 
     # load YAML config.yaml and secret.yaml
-
     config = read_yaml_config("config.yaml")
+    general_config.update(config)
     secret = read_yaml_config("secret.yaml")
-    config.update(secret)
+    general_config.update(secret)
 
     set_initdb_function_factory(initdb_function_factory)
 
