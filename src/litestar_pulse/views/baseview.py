@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from litestar.datastructures import MultiDict
 
 __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
@@ -26,9 +25,10 @@ from litestar.handlers.base import BaseRouteHandler
 from litestar.connection import ASGIConnection
 from litestar.exceptions import NotAuthorizedException
 
-from litestar_pulse.config.app import logger
+from litestar_pulse.config.app import logger, general_config
 from litestar_pulse.db import set_handler
 from litestar_pulse.db.handler import handler_factory
+from litestar_pulse.db.models.coremixins import RoleMixin
 from litestar_pulse.lib.template import Template
 from litestar_pulse.lib import roles as r
 from litestar_pulse.lib.fileupload import FileUploadProxy
@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from tagato import tags as t
+    from litestar.datastructures import FormMultiDict, MultiDict
 
 
 # TODO:
@@ -77,7 +78,14 @@ class LPController(Controller):
                 current_owner = getattr(current_owner, "owner", None)
                 depth += 1
 
-        return controller or cls
+        if controller is None:
+            raise RuntimeError(
+                f"Could not locate the controller instance for handler {handler}. "
+                "Ensure that the handler is defined within a class that inherits from LPController "
+                "and that the class is properly instantiated as a controller in the application."
+            )
+
+        return controller
 
     @classmethod
     async def managing_role_guard(
@@ -85,21 +93,22 @@ class LPController(Controller):
     ) -> None:
         controller: LPController = await cls.get_this_controller(handler)
         managing_role = (
-            controller.model_type.__managing_roles__
+            controller.model_type.__managing_roles__  # type: ignore
             if controller and hasattr(controller, "model_type")
             else controller.managing_roles
         )
 
         logger.info(
-            f"guard checking managing role {managing_role} for {cls.__class__.__name__}"
+            f"guard checking managing role {managing_role} for {controller.__class__.__name__}"
         )
 
-        if hasattr(controller, "model_type") and controller.model_type is not None:
-            if not controller.model_type.can_manage(
+        if model_type := getattr(controller, "model_type", None):
+            if not model_type.can_manage(
                 connection.user.roles if hasattr(connection.user, "roles") else set()
             ):
                 raise NotAuthorizedException(
-                    "User does not have required managing roles."
+                    "User does not have required managing roles. "
+                    f"Required: {managing_role}, User roles: {connection.user.roles if hasattr(connection.user, 'roles') else None} "
                 )
         else:
             # Fallback to the controller's managing_roles if no model_type is defined
@@ -108,6 +117,7 @@ class LPController(Controller):
             ):
                 raise NotAuthorizedException(
                     "User does not have required managing roles."
+                    f"Required: {managing_role}, User roles: {connection.user.roles if hasattr(connection.user, 'roles') else None} "
                 )
 
         # if required_role and connection.user.role != required_role:
@@ -119,9 +129,11 @@ class LPController(Controller):
     ) -> None:
         # Locate the LPController-derived instance that defines viewing_roles.
 
-        controller: LPController = await cls.get_this_controller(handler)
+        controller: LPController | type[LPController] = await cls.get_this_controller(
+            handler
+        )
         viewing_roles = (
-            controller.model_type.__viewing_roles__
+            controller.model_type.__viewing_roles__  # type: ignore
             if controller and hasattr(controller, "model_type")
             else controller.viewing_roles
         )
@@ -133,12 +145,13 @@ class LPController(Controller):
             controller,
         )
 
-        if hasattr(controller, "model_type") and controller.model_type is not None:
-            if not controller.model_type.can_view(
+        if model_type := getattr(controller, "model_type", None):
+            if not model_type.can_view(
                 connection.user.roles if hasattr(connection.user, "roles") else set()
             ):
                 raise NotAuthorizedException(
                     "User does not have required viewing roles."
+                    f"Required: {viewing_roles}, User roles: {connection.user.roles if hasattr(connection.user, 'roles') else None} "
                 )
         else:
             # Fallback to the controller's viewing_roles if no model_type is defined
@@ -147,6 +160,7 @@ class LPController(Controller):
             ):
                 raise NotAuthorizedException(
                     "User does not have required viewing roles."
+                    f"Required: {viewing_roles}, User roles: {connection.user.roles if hasattr(connection.user, 'roles') else None} "
                 )
 
         # if required_role and connection.user.role != required_role:
@@ -289,7 +303,9 @@ class LPBaseView(LPController):
         ctx.setdefault("title", f"List of {self.__class__.__name__}")
         return Template(template_name=self.plain_template_file, context=ctx)
 
-    async def view(self, dbid: int | None = None, uuid: str | None = None) -> Any:
+    async def view(
+        self, dbid: int | None = None, uuid: UUID | str | None = None
+    ) -> Any:
         """
         Render view by ID or UUID page
         """
@@ -317,7 +333,7 @@ class LPBaseView(LPController):
         )
         self.init_view(request, db_session, transaction)
         ctx = await self.view(uuid=uuid)
-        ctx.setdefault("title", Markup("Viewing ") + self.get_model_title(as_url=True))
+        ctx.setdefault("title", Markup("Viewing ") + self.get_title())
         return Template(template_name=self.form_template_file, context=ctx)
 
     @get(path="/{dbid:int}", name="view-id", guards=[LPController.viewing_role_guard])
@@ -336,7 +352,7 @@ class LPBaseView(LPController):
         )
         self.init_view(request, db_session, transaction)
         ctx = await self.view(dbid=dbid)
-        ctx.setdefault("title", Markup("Viewing ") + self.get_model_title(as_url=True))
+        ctx.setdefault("title", Markup("Viewing ") + self.get_title())
         return Template(template_name=self.form_template_file, context=ctx)
 
     @get(
@@ -357,7 +373,7 @@ class LPBaseView(LPController):
         )
         self.init_view(request, db_session, transaction)
         ctx = await self.edit(dbid=dbid)
-        ctx.setdefault("title", Markup("Editing ") + self.get_model_title(as_url=True))
+        ctx.setdefault("title", Markup("Editing ") + self.get_title())
         return Template(template_name=self.form_template_file, context=ctx)
 
     async def edit(self, dbid: int | None = None) -> Any:
@@ -479,7 +495,7 @@ class LPBaseView(LPController):
         form_data = await request.form()
         return await self.action(form_data)
 
-    async def action(self, data: MultiDict[Any]) -> Any:
+    async def action(self, data: FormMultiDict | MultiDict[Any]) -> Any:
         """
         Handle action request
         """
@@ -503,7 +519,7 @@ class LPBaseView(LPController):
             dbids,
         )
         self.init_view(request, db_session, transaction)
-        await self.api_delete(dbid=dbids)
+        await self.api_delete(dbid=dbids)  # type: ignore
         redirect_url = request.url_for(
             f"{self.__class__.__name__.lower().removesuffix('view')}-index"
         )
@@ -603,6 +619,14 @@ class LPBaseView(LPController):
         - this method should return a File response with appropriate media type if the file is found and accessible, or raise an appropriate exception if not
         """
         raise NotImplementedError
+
+    def get_title(self):
+        """
+        Get the title for the view, which will be shown in the page title
+        """
+        return escape(
+            f"{general_config.get('title')} - {self.__class__.__name__.removesuffix('View').replace('_', ' ')}"
+        )
 
 
 # EOF
