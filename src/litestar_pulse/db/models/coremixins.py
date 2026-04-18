@@ -46,6 +46,7 @@ from advanced_alchemy.mixins.sentinel import SentinelMixin
 from advanced_alchemy.types import FileObject, FileObjectList, StoredObject
 
 from litestar_pulse.lib import roles as r
+from litestar_pulse.config.app import logger
 
 if TYPE_CHECKING:
     from .account import User
@@ -242,18 +243,30 @@ class RoleMixin:
 
     @classmethod
     def can_manage(cls, roles: set[str]) -> bool:
+        logger.debug(
+            f"Checking managing roles for {cls.__name__}: required {cls.__managing_roles__}, user roles: {roles}"
+        )
         return bool(cls.__managing_roles__ & roles)
 
     @classmethod
     def can_modify(cls, roles: set[str]) -> bool:
+        logger.debug(
+            f"Checking modifying roles for {cls.__name__}: required {cls.__modifying_roles__}, user roles: {roles}"
+        )
         return bool(cls.__modifying_roles__ & roles)
 
     @classmethod
     def can_view(cls, roles: set[str]) -> bool:
+        logger.debug(
+            f"Checking viewing roles for {cls.__name__}: required {cls.__viewing_roles__}, user roles: {roles}"
+        )
         return bool(cls.__viewing_roles__ & roles)
 
     @classmethod
     def can_delete(cls, roles: set[str]) -> bool:
+        logger.debug(
+            f"Checking deleting roles for {cls.__name__}: required {cls.__deleting_roles__}, user roles: {roles}"
+        )
         return cls.can_manage(roles) or bool(cls.__deleting_roles__ & roles)
 
 
