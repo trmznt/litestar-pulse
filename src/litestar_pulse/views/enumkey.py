@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from ..db.models.enumkey import EnumKey
 from ..lib import roles as r
+from . import get_lp_prefix
 from .modelview import LPModelView, form_submit_bar, Request, ct, f, fb, t, v
 
 
@@ -52,7 +53,7 @@ class EnumKeyView(LPModelView):
     EnumKeyView is the view for enum key management
     """
 
-    path = "/enumkey"
+    path = get_lp_prefix() + "/enumkey"
     model_type = EnumKey
     model_form = EnumKeyForm
     title = "Enum Key Management"

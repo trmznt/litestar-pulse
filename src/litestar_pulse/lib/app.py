@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from litestar_pulse.views import get_lp_controllers
+
 __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
@@ -144,19 +146,11 @@ def handle_favicon() -> None:
 
 
 def init_app(
+    lp_prefix: str = "/",
     initdb_function_factory: Callable[[], Any] = lp_initdb_function_factory,
 ) -> Litestar:
 
     from litestar_pulse.views.components import user_menu
-    from litestar_pulse.views.home import HomeView
-
-    from litestar_pulse.views.login import LoginView
-    from litestar_pulse.views.enumkey import EnumKeyView
-    from litestar_pulse.views.userdomain import UserDomainView
-    from litestar_pulse.views.user import UserView
-    from litestar_pulse.views.group import GroupView
-    from litestar_pulse.views.async_fileupload import AsyncFileUpload
-    from litestar_pulse.views.api_v1 import API_v1
 
     # load YAML config.yaml and secret.yaml
     config = read_yaml_config("config.yaml")
@@ -167,6 +161,19 @@ def init_app(
     set_initdb_function_factory(initdb_function_factory)
 
     init_filestorage()
+
+    static_route_handler = create_static_files_router(
+        path="/static/",
+        directories=resources_to_paths(
+            [
+                "assets",
+                "litestar_pulse:assets",
+            ]
+        ),
+    )
+
+    route_handlers = [handle_favicon, static_route_handler]
+    route_handlers.extend(get_lp_controllers(lp_prefix))
 
     # dbc = DBConfig()
     # dbplugin = SQLAlchemyInitPlugin(
@@ -187,16 +194,6 @@ def init_app(
         ipdb,
         # set exceptions that need to be excluded from triggering the debugger
         excluded_exceptions=(NotFoundException, NotAuthorizedException),
-    )
-
-    static_route_handler = create_static_files_router(
-        path="/static/",
-        directories=resources_to_paths(
-            [
-                "assets",
-                "litestar_pulse:assets",
-            ]
-        ),
     )
 
     plugins = [
@@ -236,18 +233,7 @@ def init_app(
     context_injector(add_helper_context)
 
     return Litestar(
-        route_handlers=[
-            handle_favicon,
-            static_route_handler,
-            HomeView,
-            LoginView,
-            EnumKeyView,
-            UserDomainView,
-            UserView,
-            GroupView,
-            API_v1,
-            AsyncFileUpload,
-        ],
+        route_handlers=route_handlers,
         dependencies={"transaction": provide_transaction},
         middleware=[
             DefineMiddleware(HandlerContextMiddleware),

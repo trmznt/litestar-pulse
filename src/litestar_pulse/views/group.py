@@ -9,7 +9,7 @@ __license__ = "MPL-2.0"
 
 # generate a vieew for Group model similar to User and UserDomain
 from html import escape
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 from sqlalchemy.orm import object_session, selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,14 +19,14 @@ from tagato import tags as t, formfields as f
 
 from litestar_pulse.lib import roles as r
 from litestar_pulse.db.models.account import Group, User, UserGroup
+from . import get_lp_prefix
 from .modelview import LPModelView, form_submit_bar
 from ..lib import validators as v
-
-# from ..lib import coretags as t
 from ..lib import compositetags as ct
-
-# from ..lib import forminputs as f
 from ..lib import formbuilder as fb
+
+if TYPE_CHECKING:
+    from sqlalchemy.exc import IntegrityError
 
 
 class GroupForm(fb.ModelForm):
@@ -57,7 +57,7 @@ class GroupForm(fb.ModelForm):
         return form_layout
 
     def process_integrity_error(
-        self, error: Exception, data: dict[str, Any], dbsession: AsyncSession
+        self, error: IntegrityError, data: dict[str, Any], dbsession: AsyncSession
     ) -> None:
         detail = error.args[0]
         if "UNIQUE" in detail or "UniqueViolation" in detail:
@@ -75,7 +75,7 @@ class GroupView(LPModelView):
     GroupView is the view for group management
     """
 
-    path = "/group"
+    path = get_lp_prefix() + "/group"
     model_type = Group
     model_form = GroupForm
     title = "Group Management"
@@ -118,7 +118,7 @@ class GroupView(LPModelView):
     ) -> tuple[t.Tag, str]:
         return generate_group_table(groups, self.req)
 
-    async def get_bottom_panel(self, instance: Any) -> t.Tag:
+    async def get_bottom_panel(self, instance: Any) -> dict[str, Any] | None:
 
         usergroups = await instance.awaitable_attrs.usergroups
         if not any(usergroups):

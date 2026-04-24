@@ -21,6 +21,7 @@ from litestar_pulse.lib import compositetags as ct
 from litestar_pulse.lib import validators as v
 from litestar_pulse.lib import formbuilder as fb
 
+from . import get_lp_prefix
 from .modelview import LPModelView, form_submit_bar
 
 
@@ -97,7 +98,7 @@ class UserDomainView(LPModelView):
     UserDomainView is the view for user domain management
     """
 
-    path = "/userdomain"
+    path = get_lp_prefix() + "/userdomain"
 
     model_type = UserDomain
     model_form = UserDomainForm

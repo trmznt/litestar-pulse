@@ -22,6 +22,7 @@ from litestar.plugins.flash import flash
 from litestar_pulse.config.app import logger
 from litestar_pulse.lib import roles as r
 from litestar_pulse.db.models.account import User, UserGroup, Group
+from . import get_lp_prefix
 from .modelview import LPModelView, form_submit_bar, parse_indexed_form
 from ..lib.template import Template
 from ..lib import crypt
@@ -119,7 +120,7 @@ class UserView(LPModelView):
     UserView is the view for user management
     """
 
-    path = "/user"
+    path = get_lp_prefix() + "/user"
 
     model_type = User
     model_form = UserForm
@@ -594,7 +595,9 @@ async def generate_usergroup_modify_role_popup(
     )
 
 
-async def modify_usergroup_role(controller: LPModelView, data: dict[str, Any]) -> None:
+async def modify_usergroup_role(
+    controller: LPModelView, data: MultiDict[Any] | dict[str, Any]
+) -> None:
 
     usergroup_data = parse_indexed_form(data)["usergroup"]
 
@@ -633,7 +636,7 @@ async def modify_usergroup_role(controller: LPModelView, data: dict[str, Any]) -
 
 
 async def generate_usergroup_add_popup(
-    controller: LPModelView, data: dict[str, Any]
+    controller: LPModelView, data: MultiDict[Any] | dict[str, Any]
 ) -> t.Tag | Template:
 
     try:
