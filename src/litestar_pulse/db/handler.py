@@ -482,6 +482,41 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[Any], Generic[T]):
             setattr(instance, attr_name, instance_file_objects)
             flag_modified(instance, attr_name)
 
+    def new(self, session=None) -> Any:
+        """Create a new instance of the handler with the given session or the current request-scoped session."""
+        if session is None:
+            session = self.repository.session
+        instance = self.repository.model_type()
+        session.add(instance)
+        return instance
+
+    async def upsert_from_dict(
+        self, data: dict[str, Any], key: str | None = None, create: bool = False
+    ) -> Any:
+        """Upsert an instance of the handler's model type from a dict, using the 'id' field to determine if it should be created or updated."""
+        model_type = self.repository.model_type
+        if "id" in data:
+            instance = await self.repository.get(data["id"])
+            if instance is None:
+                raise ValueError(
+                    f"{model_type.__name__} with id {data['id']} does not exist"
+                )
+        elif key is not None:
+            instance = await self.repository.get_one_or_none(**{key: data[key]})
+            if instance is None:
+                instance = self.new()
+        elif create:
+            instance = self.new()
+        else:
+            raise ValueError("Cannot upsert without 'id' or key field")
+
+        await self.update_from_dict(instance, data)
+        return instance
+
+    def __init__(self, handler: LPHandler | None = None, **kwargs: Any) -> None:
+        self.handler = handler
+        super().__init__(**kwargs)
+
 
 class EnumKeyService(LPBaseService[enumkey.EnumKey]):
     repository_type = EnumKeyRepo
@@ -643,6 +678,43 @@ class LPHandler:
             return self.service.__dict__[model_type.__name__]
         except KeyError:
             raise ValueError(f"No service found for model type {model_type}")
+
+    async def normalize_groups(
+        self, groups: list[Any] | Any
+    ) -> list[account.Group] | account.Group:
+        """Normalize a list of group identifiers (int IDs or string or Group objects) to a list of Group objects."""
+        scalar = False
+        normalized_groups: list[account.Group] = []
+        if not isinstance(groups, list):
+            scalar = True
+            groups = [groups]
+        for group_id in groups:
+            if isinstance(group_id, account.Group):
+                normalized_groups.append(group_id)
+            else:
+                if isinstance(group_id, str):
+                    group_label = group_id.strip()
+                    if not group_id.isdigit():
+                        group = await self.repo.Group.__wrapped__.get_one_or_none(
+                            name=group_label
+                        )
+                        if group is None:
+                            raise ValueError(
+                                f"Group with name '{group_label}' not found"
+                            )
+                        normalized_groups.append(group)
+                        continue
+                try:
+                    group_id = int(group_id)
+                    normalized_groups.append(
+                        await self.repo.Group.__wrapped__.get(group_id)
+                    )
+                except (ValueError, TypeError):
+                    raise ValueError(f"Invalid group identifier: {group_id}")
+
+        if scalar and normalized_groups:
+            return normalized_groups[0]
+        return normalized_groups
 
 
 # set default handler class
