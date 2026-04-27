@@ -73,3 +73,8 @@ Formbuilder
 See docs/30-formbuilder.rst for a focused description of the descriptor/proxy/form orchestration,
 runtime update flow, and streamlining proposals.
 
+Full-text Search
+----------------
+
+Use vector search, with either SQLAlchemy-Vectorstores or sifts.
+
