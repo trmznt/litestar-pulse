@@ -28,8 +28,8 @@ dependencies = [
 [project.entry-points."litestar.commands"]
 pulsemgr = "litestar_pulse.cli.commands:pulsemgr"
 
-[project.scripts]
-pulsemgr = "litestar_pulse.cli.commands:main"
+#[project.scripts]
+#pulsemgr = "litestar_pulse.cli.commands:main"
 
 [build-system]
 requires = ["uv_build>=0.9.18,<0.10.0"]
