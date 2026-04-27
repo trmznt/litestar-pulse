@@ -96,7 +96,7 @@ def get_handler() -> Any:
     if handler is None:
         raise RuntimeError(
             "No request-scoped handler is available in this context. "
-            "Ensure LPController.init_view() has been called for this request."
+            "Ensure LPController.init_view() or set_handler() has been called for this request."
         )
     return handler
 
