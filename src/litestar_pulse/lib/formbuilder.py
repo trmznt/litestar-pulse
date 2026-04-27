@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from litestar.datastructures import MultiDict
+
 __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
@@ -17,7 +19,7 @@ validation, transformation, rendering, and persistence hooks.
 
 import json
 
-from typing import Any, Self, Callable, Awaitable
+from typing import Any, Self, Callable, Awaitable, TypeAlias
 from dataclasses import dataclass
 from functools import cached_property
 
@@ -37,6 +39,9 @@ from . import validators as v
 from . import compositetags as ct
 
 from ..db.models.enumkey import EnumKeyRegistry
+
+ValidatorFactory: TypeAlias = Callable[..., v.Validator]
+FormInputFactory: TypeAlias = Callable[..., f.BaseInput]
 
 
 ##
@@ -111,7 +116,7 @@ class _InputFieldProxy:
 
     owner_instance: Any  # the ModelForm instance
     name: str  # the field attribute name
-    input_field: "InputField"  # the InputField descriptor instance
+    input_field: Any  # the InputField descriptor instance
 
     def get_name(self) -> str:
         return self.name
@@ -152,6 +157,7 @@ class _InputFieldProxy:
 
     def _opts_with_option_callback(self, option_callback=None, **kwargs: Any) -> Self:
         """Apply an optional runtime callback and forward options to the widget."""
+        raise NotImplementedError()
         if option_callback is not None:
             self.form_input.option_callback = option_callback
         self.form_input.opts(**kwargs)
@@ -177,6 +183,7 @@ class _InputFieldProxy:
 
     def __tag__(self) -> t.Tag:
         """Tagato rendering protocol — returns the form input widget."""
+        raise NotImplementedError()
         return self.form_input
 
 
@@ -220,8 +227,8 @@ class _EnumKeyInputFieldProxy(_InputFieldProxy):
         if obj is not None:
             value = getattr(obj, self.name, None)
             if value is not None and self.input_field.foreignkey_for is not None:
-                ekey = getattr(obj, self.input_field.foreignkey_for, "")
-                return (value, ekey.key)
+                ekey = getattr(obj, self.input_field.foreignkey_for, None)
+                return (value, ekey.key if ekey else "")
         return (None, None)
 
     def get_options(self) -> list[tuple[int, str]]:
@@ -315,7 +322,7 @@ class _FileUploadFieldProxy(_InputFieldProxy):
             return data[self.name]  # this should be the uploaded file object
 
         if obj is not None:
-            file_object: FileObject = getattr(obj, self.name, None)
+            file_object: FileObject | None = getattr(obj, self.name, None)
             return file_object
         return None
 
@@ -333,7 +340,7 @@ class _MultipleFileUploadFieldProxy(_InputFieldProxy):
             return data[self.name]  # this should be a list of uploaded file objects
 
         if obj is not None:
-            file_objects: FileObjectList = getattr(obj, self.name, None)
+            file_objects: FileObjectList | None = getattr(obj, self.name, None)
             return file_objects
         return None
 
@@ -364,7 +371,7 @@ class _FilePondFieldProxy(_InputFieldProxy):
             return data[self.name]
 
         if obj is not None:
-            file_objects: FileObjectList = getattr(obj, self.name, [])
+            file_objects: FileObjectList | None = getattr(obj, self.name, None)
             return file_objects
 
         return []
@@ -399,7 +406,7 @@ class InputField:
     """
 
     validator: v.Validator
-    forminput: type[f.BaseInput]
+    forminput: FormInputFactory
     label: str | None = None
 
     # required when needed when creating new instance, but not necessary
@@ -414,7 +421,7 @@ class InputField:
     text_from: str | None = None
 
     # the proxy class to use when accessing this field on an instance
-    proxy_class: type = _InputFieldProxy
+    proxy_class: type[_InputFieldProxy] = _InputFieldProxy
 
     _FIELD_LIST_ATTR = "__fields__"
 
@@ -541,8 +548,8 @@ class StringField(InputField):
         label: str,
         required: bool = False,
         max_length: int | None = None,
-        validator: v.Validator = v.String,
-        forminput: f.FormField = f.TextInput,
+        validator: ValidatorFactory = v.String,
+        forminput: FormInputFactory = f.TextInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -561,8 +568,8 @@ class AlphanumPlusField(InputField):
         label: str,
         required: bool = False,
         max_length: int | None = None,
-        validator: v.Validator = v.AlphanumPlus,
-        forminput: f.FormField = f.TextInput,
+        validator: ValidatorFactory = v.AlphanumPlus,
+        forminput: FormInputFactory = f.TextInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -581,8 +588,8 @@ class AlphanumField(InputField):
         label: str,
         required: bool = False,
         max_length: int | None = None,
-        validator: v.Validator = v.Alphanum,
-        forminput: f.FormField = f.TextInput,
+        validator: ValidatorFactory = v.Alphanum,
+        forminput: FormInputFactory = f.TextInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -600,8 +607,8 @@ class UUIDField(InputField):
         self,
         label: str,
         required: bool = False,
-        validator: v.Validator = v.UUID,
-        forminput: f.FormField = f.TextInput,
+        validator: ValidatorFactory = v.UUID,
+        forminput: FormInputFactory = f.TextInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -619,8 +626,8 @@ class EmailField(InputField):
         label: str,
         required: bool = False,
         max_length: int | None = None,
-        validator: v.Validator = v.Email,
-        forminput: f.FormField = f.TextInput,
+        validator: ValidatorFactory = v.Email,
+        forminput: FormInputFactory = f.TextInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -638,8 +645,8 @@ class IntField(InputField):
         self,
         label: str,
         required: bool = False,
-        validator: v.Validator = v.Int,
-        forminput: f.FormField = f.TextInput,
+        validator: ValidatorFactory = v.Int,
+        forminput: FormInputFactory = f.TextInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -656,8 +663,8 @@ class FloatField(InputField):
         self,
         label: str,
         required: bool = False,
-        validator: v.Validator = v.Float,
-        forminput: f.FormField = f.TextInput,
+        validator: ValidatorFactory = v.Float,
+        forminput: FormInputFactory = f.TextInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -674,8 +681,8 @@ class YAMLField(InputField):
         self,
         label: str,
         required: bool = False,
-        validator: v.Validator = v.YAML,
-        forminput: f.FormField = f.TextAreaInput,
+        validator: ValidatorFactory = v.YAML,
+        forminput: FormInputFactory = f.TextAreaInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -697,8 +704,8 @@ class ForeignKeyField(InputField):
         required: bool = False,
         foreignkey_for: str | None = None,
         text_from: str | None = None,
-        validator: v.Validator = v.ForeignKeyInt,
-        forminput: f.FormField = f.SelectInput,
+        validator: ValidatorFactory = v.ForeignKeyInt,
+        forminput: FormInputFactory = f.SelectInput,
         option_async_callback: (
             Callable[[Any], Callable[[], Awaitable[list[tuple[str, str]]]]] | None
         ) = None,
@@ -736,11 +743,11 @@ class SelectField(InputField):
         required: bool = False,
         options: list[tuple[Any, str]] | None = None,
         option_callback: Any | None = None,
-        validator: v.Validator = v.String,
+        validator: ValidatorFactory = v.String,
         options_async_callback: (
             Callable[[Any], Callable[[], Awaitable[list[tuple[Any, str]]]]] | None
         ) = None,
-        forminput: f.FormField = f.SelectInput,
+        forminput: FormInputFactory = f.SelectInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -772,8 +779,8 @@ class EnumKeyField(InputField):
         label: str,
         required: bool = False,
         foreignkey_for: str | None = None,
-        validator: v.Validator = v.Int,
-        forminput: f.FormField = f.SelectInput,
+        validator: ValidatorFactory = v.Int,
+        forminput: FormInputFactory = f.SelectInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -798,8 +805,8 @@ class EnumKeyCollectionField(InputField):
         category_key: str,
         required: bool = False,
         foreignkey_for: str | None = None,
-        validator: v.Validator = v.IntList,
-        forminput: f.FormField = lambda **kwargs: f.SelectInput(
+        validator: ValidatorFactory = v.IntList,
+        forminput: FormInputFactory = lambda **kwargs: f.SelectInput(
             multiple=True, **kwargs
         ),
         **kwargs: Any,
@@ -827,8 +834,8 @@ class DBEnumKeyField(InputField):
         label: str,
         required: bool = False,
         foreignkey_for: str | None = "category",
-        validator: v.Validator = v.Int,
-        forminput: f.FormField = f.SelectInput,
+        validator: ValidatorFactory = v.Int,
+        forminput: FormInputFactory = f.SelectInput,
         option_async_callback: (
             Callable[[Any], Callable[[], Awaitable[list[tuple[str, str]]]]] | None
         ) = None,
@@ -862,8 +869,8 @@ class CheckboxField(InputField):
         self,
         label: str,
         required: bool = False,
-        validator: v.Validator = v.Boolean,
-        forminput: f.FormField = f.CheckboxInput,
+        validator: ValidatorFactory = v.Boolean,
+        forminput: FormInputFactory = f.CheckboxInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -882,11 +889,11 @@ class TomSelectField(InputField):
         required: bool = False,
         options: list[tuple[Any, str]] | None = None,
         option_callback: Any | None = None,
-        validator: v.Validator = v.String,
+        validator: ValidatorFactory = v.String,
         options_async_callback: (
             Callable[[Any], Callable[[], Awaitable[list[tuple[Any, str]]]]] | None
         ) = None,
-        forminput: f.FormField = lambda **kwargs: f.SelectInput(
+        forminput: FormInputFactory = lambda **kwargs: f.SelectInput(
             always_show_input=True, **kwargs
         ),
         tom_select_options: dict[str, Any] | None = None,
@@ -950,12 +957,14 @@ class TomSelectEnumKeyCollectionField(InputField):
         label: str,
         category_key: str,
         required: bool = False,
-        validator: v.Validator = v.IntList,
-        forminput: f.FormField = lambda override_theme=_bs53_override_theme, **kwargs: f.SelectInput(
-            multiple=True,
-            always_show_input=True,
-            override_theme=override_theme(),
-            **kwargs,
+        validator: ValidatorFactory = v.IntList,
+        forminput: FormInputFactory = (
+            lambda override_theme=_bs53_override_theme, **kwargs: f.SelectInput(
+                multiple=True,
+                always_show_input=True,
+                override_theme=override_theme(),
+                **kwargs,
+            )
         ),
         tom_select_options: dict[str, Any] | None = None,
         **kwargs: Any,
@@ -1006,8 +1015,8 @@ class FileUploadField(InputField):
         self,
         label: str,
         required: bool = False,
-        validator: v.Validator = v.FileUpload,
-        forminput: f.FormField = lambda **kwargs: f.FileInput(
+        validator: ValidatorFactory = v.FileUpload,
+        forminput: FormInputFactory = lambda **kwargs: f.FileInput(
             removal_flag="-retain-if-false!flag", **kwargs
         ),
         **kwargs: Any,
@@ -1031,8 +1040,8 @@ class MultipleFileUploadField(InputField):
         self,
         label: str,
         required: bool = False,
-        validator: v.Validator = v.FileUploadList,
-        forminput: f.FormField = ct.MultipleFileInput,
+        validator: ValidatorFactory = v.FileUploadList,
+        forminput: FormInputFactory = ct.MultipleFileInput,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -1054,8 +1063,8 @@ class PreUploadFileField(InputField):
         self,
         label: str,
         required: bool = False,
-        validator: v.Validator = v.FileUpload,
-        forminput: f.FormField = lambda **kwargs: f.FileInput(**kwargs),
+        validator: ValidatorFactory = v.FileUpload,
+        forminput: FormInputFactory = lambda **kwargs: f.FileInput(**kwargs),
         **kwargs: Any,
     ) -> None:
         _validator = validator(
@@ -1077,8 +1086,8 @@ class FilePondUploadField(InputField):
         self,
         label: str,
         required: bool = False,
-        validator: v.Validator = v.FileUpload,
-        forminput: f.FormField = ct.FilePondInput,
+        validator: ValidatorFactory = v.FileUpload,
+        forminput: FormInputFactory = ct.FilePondInput,
         categories: set[str] | None = None,
         filepond_options: dict[str, Any] | None = None,
         **kwargs: Any,
@@ -1190,7 +1199,7 @@ class ModelForm:
 
     def _iter_field_validation_inputs(
         self,
-        data: dict[str, Any],
+        data: dict[str, Any] | MultiDict[Any],
         *,
         only_present: bool,
     ):
@@ -1206,12 +1215,12 @@ class ModelForm:
             value = data.get(field_name, None)
 
             validator = field_proxy.input_field.validator
-            if validator.type == list and hasattr(data, "getall"):
+            if validator.type == list and isinstance(data, MultiDict):
                 value = data.getall(field_name, [])
 
             yield field_name, field_proxy, value
 
-    def validate(self, obj: Any, data: dict[str, Any]) -> None:
+    def validate(self, obj: Any, data: dict[str, Any] | MultiDict[Any]) -> None:
         """Validate all declared fields against the submitted data.
 
         :param obj: the current database object (passed to validators for
@@ -1312,7 +1321,10 @@ class ModelForm:
             self.process_integrity_error(e, data, dbhandler.session)
 
         except IntegrityError as e:
-            self.process_integrity_error(e.__cause__, data, dbhandler.session)
+            cause = e.__cause__
+            if isinstance(cause, exc.IntegrityError):
+                self.process_integrity_error(cause, data, dbhandler.session)
+            raise
 
         except Exception:
             raise

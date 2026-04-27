@@ -93,7 +93,11 @@ class _ForeignKeyIntFieldValidator(_FieldValidator):
         if obj is not None:
             value = getattr(obj, self._name, None)
             text = ""
-            if value is not None and self._validator.foreignkey_for is not None:
+            if (
+                value is not None
+                and self._validator.foreignkey_for is not None
+                and self._validator.text_from is not None
+            ):
                 related_obj = getattr(obj, self._validator.foreignkey_for)
                 text = getattr(related_obj, self._validator.text_from, "")
             return (value, text)
@@ -113,7 +117,7 @@ class Validator:
     can be resolved lazily via the ``_name`` cached property.
     """
 
-    type: type = str
+    type: type[Any] = str
     required: bool = False
     alphanum: bool = False
     alphanumplus: bool = False
@@ -123,13 +127,13 @@ class Validator:
     strip: bool = True
     yaml: bool = False
     fileupload: bool = False
-    max_value: int | None = None
-    min_value: int | None = None
-    list_item_type: type | None = None
+    max_value: float | None = None
+    min_value: float | None = None
+    list_item_type: type[Any] | None = None
     list_separator: str = ","
     foreignkey_for: str | None = None
     text_from: str | None = None
-    field_validator_class: type = _FieldValidator
+    field_validator_class: type[_FieldValidator] = _FieldValidator
 
     @cached_property
     def _name(self) -> str:
@@ -611,7 +615,7 @@ def YAML(required: bool = False) -> Validator:
 def FileUpload(required: bool = False) -> Validator:
     """Helper function to create a File Upload Validator."""
     return Validator(
-        type=Any,
+        type=object,
         required=required,
         fileupload=True,
     )
@@ -622,7 +626,7 @@ def FileUploadList(required: bool = False) -> Validator:
     return Validator(
         type=list,
         required=required,
-        list_item_type=Any,
+        list_item_type=object,
         fileupload=True,
     )
 
