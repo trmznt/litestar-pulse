@@ -20,6 +20,7 @@ from advanced_alchemy.base import orm_registry
 
 from litestar_pulse.config.db import DBConfig
 from litestar_pulse.lib.crypt import hash_password
+from litestar_pulse.db import handler_factory, set_handler
 from litestar_pulse.db.models.account import Group, User, UserDomain, UserGroup
 from litestar_pulse.db.models.enumkey import EnumKey, EnumKeyRegistry
 
@@ -42,26 +43,27 @@ def add_initdb_function(func: Callable[..., Any]) -> None:
 
 
 async def initialize_lp_seed(
-    session: AsyncSession, result_dict: dict[str, Any]
+    session: AsyncSession, result_dict: dict[str, Any], seed_module: Any = SEED
 ) -> bool:
-    enumkey_payloads, group_payloads, domain_payloads = _load_fixture_payloads(SEED)
+    enumkey_payloads, group_payloads, domain_payloads = _load_fixture_payloads(
+        seed_module
+    )
 
-    result_dict["enumkeys"] = await _ensure_enumkeys(session, enumkey_payloads)
+    enumkeys = await _ensure_enumkeys(session, enumkey_payloads)
     await EnumKeyRegistry.ensure_current(session)
-    result_dict["groups"], group_map = await _ensure_groups(session, group_payloads)
-    result_dict["domains"], domain_map, result_dict["users"] = await _ensure_domains(
+    groups, group_map = await _ensure_groups(session, group_payloads)
+    domains, domain_map, users = await _ensure_domains(
         session,
         domain_payloads,
         group_map,
     )
-    if (
-        result_dict["enumkeys"]
-        or result_dict["domains"]
-        or result_dict["groups"]
-        or result_dict["users"]
-    ):
-        return True
-    return False
+    if (enumkeys < 0) or (domains < 0) or (groups < 0) or (users < 0):
+        return False
+    result_dict["enumkeys"] = result_dict.get("enumkeys", 0) + enumkeys
+    result_dict["groups"] = result_dict.get("groups", 0) + groups
+    result_dict["domains"] = result_dict.get("domains", 0) + domains
+    result_dict["users"] = result_dict.get("users", 0) + users
+    return True
 
 
 async def initialize_database(seed_module: Any = SEED) -> dict[str, int]:
@@ -79,6 +81,8 @@ async def initialize_database(seed_module: Any = SEED) -> dict[str, int]:
 
     try:
         async with session_factory() as session:
+            dbh = handler_factory(session)
+            set_handler(dbh)
             results = []
             for func in __initdb_funcs__:
                 results.append(await func(session=session, result_dict=created))
@@ -86,6 +90,7 @@ async def initialize_database(seed_module: Any = SEED) -> dict[str, int]:
             if all(results):
                 await session.commit()
             else:
+                logger.info("Initialization functions reported failure, rolling back.")
                 await session.rollback()
     finally:
         await engine.dispose()
@@ -121,6 +126,7 @@ def _load_fixture_payloads(seed_module: Any) -> tuple[
 async def _ensure_enumkeys(
     session: AsyncSession,
     payloads: Sequence[dict[str, Any]],
+    update: bool = False,
 ) -> int:
     created = 0
     if not payloads:
@@ -128,7 +134,7 @@ async def _ensure_enumkeys(
 
     before = await session.scalar(select(func.count(EnumKey.id))) or 0
     for payload in payloads:
-        await EnumKey.upsert_from_dict(session, payload, update=True)
+        await EnumKey.upsert_from_dict(session, payload, update=update)
     await session.flush()
     after = await session.scalar(select(func.count(EnumKey.id))) or before
     created = max(after - before, 0)
