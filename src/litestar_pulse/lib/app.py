@@ -140,7 +140,7 @@ def read_yaml_config(file_path: str) -> dict:
         return yaml.safe_load(f)
 
 
-@get("/favicon.ico", status_code=HTTP_204_NO_CONTENT)
+@get("/favicon.ico", status_code=HTTP_204_NO_CONTENT, sync_to_thread=False)
 def handle_favicon() -> None:
     return None
 
