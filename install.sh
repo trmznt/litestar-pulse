@@ -38,8 +38,8 @@ mkdir -p ${BASEDIR}/instances/
 
 # for dev: source <(curl -L https://raw.githubusercontent.com/vivaxgen/vvg-box/refs/heads/dev/install.sh)
 
-# create an OMIT variable and add snakemake if the OMIT variable is already exists
-OMIT="${OMIT:-}:snakemake"
+# create an EXCLUDE variable and add snakemake if the EXCLUDE variable is already exists
+EXCLUDE="${EXCLUDE:-}:snakemake"
 source <(curl -L https://raw.githubusercontent.com/vivaxgen/vvg-box/main/install.sh)
 
 echo "Cloning tagato"
