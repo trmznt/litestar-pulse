@@ -1,7 +1,16 @@
 
-(
 echo "Performing 2nd stage installation for Litestar-Pulse"
 
+source ${ENVS_DIR}/vvg-box/etc/functions
+
+# if envs/tagato directory does not exists, clone the tagato repository
+if [ ! -d ${ENVS_DIR}/tagato" ]; then
+    echo "Cloning tagato"
+    git clone --depth 1 https://github.com/trmznt/tagato.git ${ENVS_DIR}/tagato
+    echo "tagato" >> ${ETC_DIR}/installed-repo.txt
+fi
+
+(
 # run this under the base directory of the installation
 cd ${VVG_BASEDIR}
 micromamba install -y uv
@@ -19,14 +28,6 @@ dependencies = []
 EOL
 
 # source vvg-box/etc/functions
-source envs/vvg-box/etc/functions
-
-# if envs/tagato directory does not exists, clone the tagato repository
-if [ ! -d "envs/tagato" ]; then
-    echo "Cloning tagato"
-    git clone --depth 1 https://github.com/trmznt/tagato.git envs/tagato
-    echo "tagato" >> etc/installed-repo.txt
-fi
 
 # add internal dependencies
 uv add --editable envs/tagato
