@@ -18,6 +18,16 @@ requires-python = ">=3.12"
 dependencies = []
 EOL
 
+# source vvg-box/etc/functions
+source envs/vvg-box/etc/functions
+
+# if envs/tagato directory does not exists, clone the tagato repository
+if [ ! -d "envs/tagato" ]; then
+    echo "Cloning tagato"
+    git clone --depth 1 https://github.com/trmznt/tagato.git envs/tagato
+    echo "tagato" >> etc/installed-repo.txt
+fi
+
 # add internal dependencies
 uv add --editable envs/tagato
 uv add --editable envs/litestar-pulse
