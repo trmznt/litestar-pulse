@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from ..config.app import logger
 
-
 __session_class__: type[Any] | None = None
 
 
@@ -104,13 +103,23 @@ def get_handler() -> Any:
 __initdb_function_factory__: Callable[..., Any] | None = None
 
 
-def set_initdb_function_factory(func: Callable[..., Any]) -> None:
+def set_initdb_function_factory(
+    func: Callable[..., Any], override: bool = False
+) -> None:
     """Set the global database initialization function for the application.
 
     Args:
         func: The database initialization function to set.
+        override: Whether to override the existing function.
     """
     global __initdb_function_factory__
+    if __initdb_function_factory__ is not None and not override:
+        logger.info(
+            "Database initialization function factory is already set. "
+            "Use override=True to replace it."
+        )
+        return
+    logger.info(f"Setting database initialization function factory: {func}")
     __initdb_function_factory__ = func
 
 
