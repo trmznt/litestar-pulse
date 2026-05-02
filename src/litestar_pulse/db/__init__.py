@@ -100,41 +100,39 @@ def get_handler() -> Any:
     return handler
 
 
-__initdb_function_factory__: Callable[..., Any] | None = None
+__initdb_function__: Callable[..., Any] | None = None
 
 
-def set_initdb_function_factory(
-    func: Callable[..., Any], override: bool = False
-) -> None:
+def set_initdb_function(func: Callable[..., Any], override: bool = False) -> None:
     """Set the global database initialization function for the application.
 
     Args:
         func: The database initialization function to set.
         override: Whether to override the existing function.
     """
-    global __initdb_function_factory__
-    if __initdb_function_factory__ is not None and not override:
+    global __initdb_function__
+    if __initdb_function__ is not None and not override:
         logger.info(
-            "Database initialization function factory is already set. "
+            "Database initialization function is already set. "
             "Use override=True to replace it."
         )
         return
-    logger.info(f"Setting database initialization function factory: {func}")
-    __initdb_function_factory__ = func
+    logger.info(f"Setting database initialization function: {func}")
+    __initdb_function__ = func
 
 
-def get_initdb_function_factory() -> Callable[..., Any]:
+def get_initdb_function() -> Callable[..., Any]:
     """Get the global database initialization function for the application.
 
     Returns:
         The database initialization function.
     """
-    if __initdb_function_factory__ is None:
+    if __initdb_function__ is None:
         raise RuntimeError(
-            "Database initialization function factory is not set. "
-            "Please set it using set_initdb_function_factory()."
+            "Database initialization function is not set. "
+            "Please set it using set_initdb_function()."
         )
-    return __initdb_function_factory__
+    return __initdb_function__
 
 
 # EOF
