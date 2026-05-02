@@ -26,7 +26,7 @@ cat > ${VVG_BASEDIR}/pyproject.toml <<EOL
 [project]
 name = "${uMAMBA_ENVNAME}-venv"
 version = "${VERSION}"
-requires-python = "${PYVER}"
+requires-python = "==${PYVER}"
 dependencies = []
 EOL
 
@@ -41,7 +41,6 @@ fi
     uv add --editable envs/litestar-pulse
     uv sync
 )
-
 
 
 # EOF
