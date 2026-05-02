@@ -4,7 +4,7 @@ echo "Performing 2nd stage installation for Litestar-Pulse"
 source ${ENVS_DIR}/vvg-box/etc/functions
 
 # if envs/tagato directory does not exists, clone the tagato repository
-if [ ! -d ${ENVS_DIR}/tagato" ]; then
+if [ ! -d "${ENVS_DIR}/tagato" ]; then
     echo "Cloning tagato"
     git clone --depth 1 https://github.com/trmznt/tagato.git ${ENVS_DIR}/tagato
     echo "tagato" >> ${ETC_DIR}/installed-repo.txt
