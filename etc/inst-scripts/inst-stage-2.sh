@@ -10,33 +10,37 @@ if [ ! -d "${ENVS_DIR}/tagato" ]; then
     echo "tagato" >> ${ETC_DIR}/installed-repo.txt
 fi
 
-(
 # run this under the base directory of the installation
-cd ${VVG_BASEDIR}
 micromamba install -y uv
 
 # create minimal pyproject.toml
 # project version should be current date
 
+# if pyproject.toml already exists, skip this step
+if [ -f "pyproject.toml" ]; then
+    echo "pyproject.toml already exists, skipping creation"
+else
+
 VERSION=$(date +%y%m%d)
-cat > pyproject.toml <<EOL
+cat > ${VVG_BASEDIR}/pyproject.toml <<EOL
 [project]
 name = "${uMAMBA_ENVNAME}-venv"
 version = "${VERSION}"
-requires-python = ">=3.12"
+requires-python = "${PYVER}"
 dependencies = []
 EOL
+
+fi
 
 # source vvg-box/etc/functions
 
 # add internal dependencies
-uv add --editable envs/tagato
-uv add --editable envs/litestar-pulse
+uv add --editable ${ETC_DIR}/tagato
+uv add --editable ${ETC_DIR}/litestar-pulse
 uv sync
 
 # create instances directory
 mkdir -p instances
 
-)
 
 # EOF
