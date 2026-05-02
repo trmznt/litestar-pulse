@@ -13,7 +13,6 @@ from litestar import Litestar
 from litestar_pulse.cli.debugging import META_IPDB_FLAG, PulseManagerGroup
 from litestar_pulse.config.app import logger
 
-
 _NEST_ASYNCIO_APPLIED = False
 
 
@@ -46,6 +45,12 @@ def _ensure_nested_asyncio() -> None:
 )
 def pulsemgr(use_ipdb: bool) -> None:
     """Manage litestar-pulse."""
+
+    from ..db import set_initdb_function_factory
+    from ..db.handler import LPHandler
+    from ..lib.app import lp_initdb_function_factory
+
+    set_initdb_function_factory(lp_initdb_function_factory)
 
     ctx = click.get_current_context()
     ctx.meta[META_IPDB_FLAG] = use_ipdb
