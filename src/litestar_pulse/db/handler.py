@@ -482,7 +482,7 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[Any], Generic[T]):
             setattr(instance, attr_name, instance_file_objects)
             flag_modified(instance, attr_name)
 
-    def new(self, session=None) -> Any:
+    def instance(self, session=None) -> Any:
         """Create a new instance of the handler with the given session or the current request-scoped session."""
         if session is None:
             session = self.repository.session
@@ -504,9 +504,9 @@ class LPBaseService(SQLAlchemyAsyncRepositoryService[Any], Generic[T]):
         elif key is not None:
             instance = await self.repository.get_one_or_none(**{key: data[key]})
             if instance is None:
-                instance = self.new()
+                instance = self.instance()
         elif create:
-            instance = self.new()
+            instance = self.instance()
         else:
             raise ValueError("Cannot upsert without 'id' or key field")
 
