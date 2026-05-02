@@ -34,8 +34,6 @@ BASEDIR="${BASEDIR:-./litestar-pulse}"
 
 uMAMBA_ENVNAME="${uMAMBA_ENVNAME:-litestar-pulse}"
 
-mkdir -p ${BASEDIR}/instances/
-
 # for dev: source <(curl -L https://raw.githubusercontent.com/vivaxgen/vvg-box/refs/heads/dev/install.sh)
 
 # create an EXCLUDE variable and add snakemake if the EXCLUDE variable is already exists
@@ -50,6 +48,9 @@ git clone --depth 1 https://github.com/trmznt/litestar-pulse.git ${ENVS_DIR}/lit
 
 # perform 2nd stage installation for litestar-pulse
 source ${ENVS_DIR}/litestar-pulse/etc/inst-scripts/inst-stage-2.sh
+
+# generate directory for instances
+mkdir -p ${VVG_BASEDIR}/instances
 
 # add to installed-repo.txt
 echo "litestar-pulse" >> ${ETC_DIR}/installed-repo.txt

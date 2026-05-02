@@ -34,13 +34,14 @@ fi
 
 # source vvg-box/etc/functions
 
-# add internal dependencies
-uv add --editable ${ETC_DIR}/tagato
-uv add --editable ${ETC_DIR}/litestar-pulse
-uv sync
+# add uv internal dependencies
+(
+    cd ${VVG_BASEDIR}
+    uv add --editable envs/tagato
+    uv add --editable envs/litestar-pulse
+    uv sync
+)
 
-# create instances directory
-mkdir -p instances
 
 
 # EOF
