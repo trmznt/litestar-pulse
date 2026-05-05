@@ -224,6 +224,9 @@ class HelperMethodMixin:
         return result.scalars().all()
 
 
+null_set = set()
+
+
 class RoleMixin:
 
     __viewing_roles__ = {r.SYSADM, r.SYSVIEW}
@@ -241,33 +244,39 @@ class RoleMixin:
     def is_admin(cls) -> bool:
         return cls.role == "admin"  # type: ignore[return-value]
 
-    @classmethod
-    def can_manage(cls, roles: set[str]) -> bool:
+    def can_manage(
+        self, user: User | None = None, roles: set[str] | None = None
+    ) -> bool:
+        roles = (user.roles if user else null_set) | (roles or null_set)
         logger.debug(
-            f"Checking managing roles for {cls.__name__}: required {cls.__managing_roles__}, user roles: {roles}"
+            f"Checking managing roles for {self.__class__.__name__}: required {self.__managing_roles__}, user roles: {roles}"
         )
-        return bool(cls.__managing_roles__ & roles)
+        return bool(self.__managing_roles__ & roles)
 
-    @classmethod
-    def can_modify(cls, roles: set[str]) -> bool:
+    def can_modify(
+        self, user: User | None = None, roles: set[str] | None = None
+    ) -> bool:
+        roles = (user.roles if user else null_set) | (roles or null_set)
         logger.debug(
-            f"Checking modifying roles for {cls.__name__}: required {cls.__modifying_roles__}, user roles: {roles}"
+            f"Checking modifying roles for {self.__class__.__name__}: required {self.__modifying_roles__}, user roles: {roles}"
         )
-        return bool(cls.__modifying_roles__ & roles)
+        return bool(self.__modifying_roles__ & roles)
 
-    @classmethod
-    def can_view(cls, roles: set[str]) -> bool:
+    def can_view(self, user: User | None = None, roles: set[str] | None = None) -> bool:
+        roles = (user.roles if user else null_set) | (roles or null_set)
         logger.debug(
-            f"Checking viewing roles for {cls.__name__}: required {cls.__viewing_roles__}, user roles: {roles}"
+            f"Checking viewing roles for {self.__class__.__name__}: required {self.__viewing_roles__}, user roles: {roles}"
         )
-        return bool(cls.__viewing_roles__ & roles)
+        return bool(self.__viewing_roles__ & roles)
 
-    @classmethod
-    def can_delete(cls, roles: set[str]) -> bool:
+    def can_delete(
+        self, user: User | None = None, roles: set[str] | None = None
+    ) -> bool:
+        roles = (user.roles if user else null_set) | (roles or null_set)
         logger.debug(
-            f"Checking deleting roles for {cls.__name__}: required {cls.__deleting_roles__}, user roles: {roles}"
+            f"Checking deleting roles for {self.__class__.__name__}: required {self.__deleting_roles__}, user roles: {roles}"
         )
-        return cls.can_manage(roles) or bool(cls.__deleting_roles__ & roles)
+        return self.can_manage(user, roles) or bool(self.__deleting_roles__ & roles)
 
 
 @declarative_mixin
