@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-
 __copyright__ = "(C) 2025 Hidayat Trimarsanto <trimarsanto@gmail.com>"
 __author__ = "trimarsanto@gmail.com"
 __license__ = "MPL-2.0"
@@ -103,18 +102,14 @@ class LPController(Controller):
         )
 
         if model_type := getattr(controller, "model_type", None):
-            if not model_type.can_manage(
-                connection.user.roles if hasattr(connection.user, "roles") else set()
-            ):
+            if not model_type.can_manage(connection.user):
                 raise NotAuthorizedException(
                     "User does not have required managing roles. "
                     f"Required: {managing_role}, User roles: {connection.user.roles if hasattr(connection.user, 'roles') else None} "
                 )
         else:
             # Fallback to the controller's managing_roles if no model_type is defined
-            if not controller.managing_roles & (
-                connection.user.roles if hasattr(connection.user, "roles") else set()
-            ):
+            if not controller.managing_roles & (connection.user):
                 raise NotAuthorizedException(
                     "User does not have required managing roles."
                     f"Required: {managing_role}, User roles: {connection.user.roles if hasattr(connection.user, 'roles') else None} "
