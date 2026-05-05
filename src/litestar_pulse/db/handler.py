@@ -716,6 +716,80 @@ class LPHandler:
             return normalized_groups[0]
         return normalized_groups
 
+    async def normalize_users(
+        self, users: list[Any] | Any
+    ) -> list[account.User] | account.User:
+        """Normalize a list of user identifiers (int IDs or string or User objects) to a list of User objects."""
+        scalar = False
+        normalized_users: list[account.User] = []
+        if not isinstance(users, list):
+            scalar = True
+            users = [users]
+        for user_id in users:
+            if isinstance(user_id, account.User):
+                normalized_users.append(user_id)
+            else:
+                if isinstance(user_id, str):
+                    user_label = user_id.strip()
+                    if not user_id.isdigit():
+                        user = await self.repo.User.__wrapped__.get_one_or_none(
+                            username=user_label
+                        )
+                        if user is None:
+                            raise ValueError(
+                                f"User with username '{user_label}' not found"
+                            )
+                        normalized_users.append(user)
+                        continue
+                try:
+                    user_id = int(user_id)
+                    normalized_users.append(
+                        await self.repo.User.__wrapped__.get(user_id)
+                    )
+                except (ValueError, TypeError):
+                    raise ValueError(f"Invalid user identifier: {user_id}")
+
+        if scalar and normalized_users:
+            return normalized_users[0]
+        return normalized_users
+
+    async def normalize_userdomains(
+        self, userdomains: list[Any] | Any
+    ) -> list[account.UserDomain] | account.UserDomain:
+        """Normalize a list of user domain identifiers (int IDs or string or UserDomain objects) to a list of UserDomain objects."""
+        scalar = False
+        normalized_userdomains: list[account.UserDomain] = []
+        if not isinstance(userdomains, list):
+            scalar = True
+            userdomains = [userdomains]
+        for ud_id in userdomains:
+            if isinstance(ud_id, account.UserDomain):
+                normalized_userdomains.append(ud_id)
+            else:
+                if isinstance(ud_id, str):
+                    ud_label = ud_id.strip()
+                    if not ud_id.isdigit():
+                        ud = await self.repo.UserDomain.__wrapped__.get_one_or_none(
+                            domain=ud_label
+                        )
+                        if ud is None:
+                            raise ValueError(
+                                f"UserDomain with domain '{ud_label}' not found"
+                            )
+                        normalized_userdomains.append(ud)
+                        continue
+                try:
+                    ud_id = int(ud_id)
+                    normalized_userdomains.append(
+                        await self.repo.UserDomain.__wrapped__.get(ud_id)
+                    )
+                except (ValueError, TypeError):
+                    raise ValueError(f"Invalid user domain identifier: {ud_id}")
+
+        if scalar and normalized_userdomains:
+            return normalized_userdomains[0]
+        return normalized_userdomains
+
 
 # set default handler class
 set_handler_class(LPHandler)
