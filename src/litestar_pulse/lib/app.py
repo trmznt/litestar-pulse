@@ -61,7 +61,6 @@ from litestar_pulse.config.app import (
     general_config,
 )
 from litestar_pulse.config.filestorage import init_filestorage
-from litestar_pulse.db import set_initdb_function_factory
 from litestar_pulse.db.models import account
 from litestar_pulse.db.models.enumkey import EnumKeyRegistry
 from litestar_pulse.lib.debugger import SelectiveDebugger
@@ -123,13 +122,6 @@ toolbar_config = LitestarDebugToolbarConfig(
 )
 
 
-def lp_initdb_function_factory() -> Callable[..., Any]:
-
-    from litestar_pulse.db.initdb import initialize_database
-
-    return initialize_database
-
-
 def read_yaml_config(file_path: str) -> dict:
     if not os.path.exists(file_path):
         logger.warning(
@@ -145,10 +137,7 @@ def handle_favicon() -> None:
     return None
 
 
-def init_app(
-    lp_prefix: str = "/",
-    initdb_function_factory: Callable[[], Any] = lp_initdb_function_factory,
-) -> Litestar:
+def init_app(lp_prefix: str = "/") -> Litestar:
 
     from litestar_pulse.views.components import user_menu
 
@@ -157,8 +146,6 @@ def init_app(
     general_config.update(config)
     secret = read_yaml_config("secret.yaml")
     general_config.update(secret)
-
-    set_initdb_function_factory(initdb_function_factory)
 
     init_filestorage()
 

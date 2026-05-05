@@ -13,7 +13,6 @@ from litestar import Litestar
 from litestar_pulse.cli.debugging import META_IPDB_FLAG, PulseManagerGroup
 from litestar_pulse.config.app import logger
 
-
 _NEST_ASYNCIO_APPLIED = False
 
 
@@ -47,6 +46,12 @@ def _ensure_nested_asyncio() -> None:
 def pulsemgr(use_ipdb: bool) -> None:
     """Manage litestar-pulse."""
 
+    from ..db import set_initdb_function
+    from ..db.handler import LPHandler
+    from ..db.initdb import initialize_database
+
+    set_initdb_function(initialize_database)
+
     ctx = click.get_current_context()
     ctx.meta[META_IPDB_FLAG] = use_ipdb
 
@@ -55,13 +60,12 @@ def pulsemgr(use_ipdb: bool) -> None:
 async def pulse_db_init() -> None:
     """Initialize the database and populate initial data."""
 
-    from litestar_pulse.db import get_initdb_function_factory
+    from litestar_pulse.db import get_initdb_function
 
     logger.info("Initializing database...")
 
-    initdb_factory = get_initdb_function_factory()
-    initdb_funcs = initdb_factory()
-    results = await initdb_funcs()
+    initdb_func = get_initdb_function()
+    results = await initdb_func()
     click.echo(
         "Ensured schema. Added "
         f"{results.get('enumkeys', 0)} enumkey(s), {results.get('groups', 0)} group(s), "

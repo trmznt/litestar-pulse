@@ -26,6 +26,7 @@ from litestar_pulse.db.models.enumkey import EnumKey, EnumKeyRegistry
 
 logger = logging.getLogger(__name__)
 
+from .handler import LPHandler
 from litestar_pulse.db.fixtures import seed
 
 SEED = seed
