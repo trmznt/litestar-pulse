@@ -66,11 +66,14 @@ async def pulse_db_init() -> None:
 
     initdb_func = get_initdb_function()
     results = await initdb_func()
-    click.echo(
-        "Ensured schema. Added "
-        f"{results.get('enumkeys', 0)} enumkey(s), {results.get('groups', 0)} group(s), "
-        f"{results.get('domains', 0)} domain(s), and {results.get('users', 0)} user(s)."
-    )
+
+    # rewrite results summary to be more user-friendly from result dict like {'enumkeys': 5, 'groups': 3, 'domains': 2, 'users': 10}
+    msg = []
+    for key in sorted(results):
+        count = results[key]
+        msg.append(f"{key}: {count}")
+
+    click.echo(f"Ensured schema. Added the following records:\n{'\n'.join(msg)}")
 
 
 @pulsemgr.command(name="userdomain-list", help="list user domains")
