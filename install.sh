@@ -3,8 +3,9 @@
 # installation script for litestar-pulse [https://github.com/trmznt/litestar-pulse]
 
 # optional variable:
-# - BASEDIR
-# - OMIT
+# - VVG_BASEDIR
+# - VVG_EXCLUDE
+# - LITESTAR_PULSE_REPOURL
 
 set -eu
 
@@ -24,27 +25,27 @@ case "$parent" in
 esac
 
 # Parsing arguments
-if [ -t 0 ] && [ -z "${BASEDIR:-}" ]; then
+if [ -t 0 ] && [ -z "${VVG_BASEDIR:-}" ]; then
   printf "Base installation directory? [./litestar-pulse] "
-  read BASEDIR
+  read VVG_BASEDIR
 fi
 
 # default value
-BASEDIR="${BASEDIR:-./litestar-pulse}"
+VVG_BASEDIR="${VVG_BASEDIR:-./litestar-pulse}"
 
-uMAMBA_ENVNAME="${uMAMBA_ENVNAME:-litestar-pulse}"
+PIXI_ENVNAME="${PIXI_ENVNAME:-litestar-pulse}"
 
 # for dev: source <(curl -L https://raw.githubusercontent.com/vivaxgen/vvg-box/refs/heads/dev/install.sh)
 
 # create an EXCLUDE variable and add snakemake if the EXCLUDE variable is already exists
 PYVER=3.14
-EXCLUDE="${EXCLUDE:-}:snakemake"
+VVG_EXCLUDE="${VVG_EXCLUDE:-}:snakemake"
 source <(curl -L https://raw.githubusercontent.com/vivaxgen/vvg-box/main/install.sh)
 
 
 echo "Cloning litestar-pulse"
 # add --branch dev for dev
-git clone --depth 1 https://github.com/trmznt/litestar-pulse.git ${ENVS_DIR}/litestar-pulse
+git clone --depth 1 ${LITESTAR_PULSE_REPOURL:-https://github.com/trmznt/litestar-pulse.git} ${ENVS_DIR}/litestar-pulse
 
 # perform 2nd stage installation for litestar-pulse
 source ${ENVS_DIR}/litestar-pulse/etc/inst-scripts/inst-stage-2.sh
@@ -60,12 +61,12 @@ echo "litestar-pulse has been successfully installed. "
 echo "Please read the docs for further setup."
 echo "The base installation directory (VVG_BASEDIR) is:"
 echo
-echo `realpath ${BASEDIR}`
+echo "$(realpath "${VVG_BASEDIR}")"
 echo
 echo "To activate the basic litestar-pulse environment (eg. for installing"
 echo "or setting up base enviroment directory), execute the command:"
 echo
-echo `realpath ${BASEDIR}`/bin/activate
+echo "    $(realpath "${BINDIR}/activate")"
 echo
 
 # EOF
