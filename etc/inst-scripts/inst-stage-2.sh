@@ -3,6 +3,9 @@ echo "Performing 2nd stage installation for Litestar-Pulse"
 
 source ${ENVS_DIR}/vvg-box/etc/functions
 
+echo ">>> Link resource files"
+${VVGBIN}/link-resource-files.sh ${ENVS_DIR}/litestar-pulse/etc/bashrc.d
+
 # if envs/tagato directory does not exists, clone the tagato repository
 if [ ! -d "${ENVS_DIR}/tagato" ]; then
     echo "Cloning tagato"
@@ -32,8 +35,6 @@ EOL
 
 fi
 
-# source vvg-box/etc/functions
-
 # add uv internal dependencies
 (
     cd ${VVG_BASEDIR}
@@ -41,6 +42,5 @@ fi
     uv add --editable envs/litestar-pulse
     uv sync
 )
-
 
 # EOF

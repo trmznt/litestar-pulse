@@ -32,7 +32,6 @@ fi
 
 # default value
 VVG_BASEDIR="${VVG_BASEDIR:-./litestar-pulse}"
-
 PIXI_ENVNAME="${PIXI_ENVNAME:-litestar-pulse}"
 
 # for dev: source <(curl -L https://raw.githubusercontent.com/vivaxgen/vvg-box/refs/heads/dev/install.sh)
@@ -41,7 +40,6 @@ PIXI_ENVNAME="${PIXI_ENVNAME:-litestar-pulse}"
 PYVER=3.14
 VVG_EXCLUDE="${VVG_EXCLUDE:-}:snakemake"
 source <(curl -L https://raw.githubusercontent.com/vivaxgen/vvg-box/main/install.sh)
-
 
 echo "Cloning litestar-pulse"
 # add --branch dev for dev
