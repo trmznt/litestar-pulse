@@ -1,7 +1,7 @@
 
 export UV_WORKING_DIR="$VVG_BASEDIR"
-export UV_PROJECT_ENVIRONMENT="$MY_PROJECT_ROOT/.venv"
-export PATH="$UV_PROJECT_ENVIRONMENT/bin:$PATH"
+export UV_PROJECT_ENVIRONMENT="${VVG_BASEDIR}/.venv"
+export PATH="${UV_PROJECT_ENVIRONMENT}/bin:$PATH"
 
-# register bash autocomplete
-# eval "$(register-python-argcomplete sra-repo.py)"
+# register click-based bash autocomplete
+eval "$(_PULSEMGR_COMPLETE=bash_source pulsemgr)"
