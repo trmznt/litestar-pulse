@@ -215,7 +215,7 @@ class _ForeignKeyInputFieldProxy(_InputFieldProxy):
 class _EnumKeyInputFieldProxy(_InputFieldProxy):
     """Proxy for EnumKeyField — resolves value from the in-memory EnumKeyRegistry."""
 
-    def get_value(self) -> tuple[int | None, str | None]:
+    def get_value(self) -> tuple[int | None, str | None] | list[tuple[int, str]]:
         obj = getattr(self.owner_instance, "obj", None)
         data = getattr(self.owner_instance, "data")
         if self.name in data:
@@ -376,7 +376,7 @@ class _FilePondFieldProxy(_InputFieldProxy):
 
         return []
 
-    def get_options(self) -> list[tuple[str, str]]:
+    def get_options(self) -> list[tuple[int, str]]:
         """
         Override to provide options for the FilePond input.
         This is to get the InputField's categories and use them as options for
