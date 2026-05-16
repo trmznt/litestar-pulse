@@ -143,11 +143,10 @@ async def pulse_user_list() -> None:
 
 
 @pulsemgr.command(name="user-add", help="add new user")
-def pulse_user_add(app: Litestar) -> None:
+def pulse_user_add() -> None:
     """User management command group."""
 
     click.echo("Adding user...")
-    click.echo(f"Running pulsemgr user-add app: {app.debug}")
 
 
 @pulsemgr.command(name="user-passwd", help="change user password")
@@ -165,11 +164,10 @@ def pulse_user_add(app: Litestar) -> None:
     confirmation_prompt=True,
     help="The new password for the user.",
 )
-async def pulse_user_passwd(app: Litestar, username: str, password: str) -> None:
+async def pulse_user_passwd(username: str, password: str) -> None:
     """Change user password."""
 
     click.echo("Changing user password...")
-    click.echo(f"Running pulsemgr user-passwd app: {app.debug}")
 
     async with get_dbhandler() as dbh:
         user = await dbh.repo.User.get_one_or_none(login=username)
