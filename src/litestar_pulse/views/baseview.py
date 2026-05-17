@@ -141,18 +141,14 @@ class LPController(Controller):
         )
 
         if model_type := getattr(controller, "model_type", None):
-            if not model_type.can_view(
-                connection.user.roles if hasattr(connection.user, "roles") else set()
-            ):
+            if not model_type.can_view(connection.user):
                 raise NotAuthorizedException(
                     "User does not have required viewing roles."
                     f"Required: {viewing_roles}, User roles: {connection.user.roles if hasattr(connection.user, 'roles') else None} "
                 )
         else:
             # Fallback to the controller's viewing_roles if no model_type is defined
-            if not controller.viewing_roles & (
-                connection.user.roles if hasattr(connection.user, "roles") else set()
-            ):
+            if not controller.viewing_roles & (connection.user):
                 raise NotAuthorizedException(
                     "User does not have required viewing roles."
                     f"Required: {viewing_roles}, User roles: {connection.user.roles if hasattr(connection.user, 'roles') else None} "
