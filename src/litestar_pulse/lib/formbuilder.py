@@ -175,7 +175,6 @@ class _InputFieldProxy:
 
     def _opts_with_option_callback(self, option_callback=None, **kwargs: Any) -> Self:
         """Apply an optional runtime callback and forward options to the widget."""
-        raise NotImplementedError()
         if option_callback is not None:
             self.form_input.option_callback = option_callback
         self.form_input.opts(**kwargs)
