@@ -109,9 +109,9 @@ class UserDomainView(LPModelView):
 
     def generate_instance_table(
         self,
-        userdomains: list[UserDomain],
+        instances: list[UserDomain],
     ) -> tuple[t.Tag, str]:
-        return generate_userdomain_table(userdomains, self.req)
+        return generate_userdomain_table(instances, self.req)
 
     def augment_repo_options(self, for_listing: bool = False) -> dict[str, Any]:
         options = super().augment_repo_options(for_listing=for_listing)
