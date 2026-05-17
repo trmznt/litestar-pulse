@@ -8,7 +8,9 @@ Installation
 ------------
 
 To install Litestar-Pulse, enter to the parent directory of the intended installation
-directory and execute the following command::
+directory and execute the following command:
+
+.. code-block:: bash
 
 	"${SHELL}" <(curl -L https://raw.githubusercontent.com/trmznt/litestar-pulse/main/install.sh)
 
@@ -27,13 +29,13 @@ is INST_DIR):
 	pulsemgr db-init
 	pulsemgr user-passwd --username sysadm --password NEW_PASSWORD
 
-Once the server is set up, you can run it with the following command::
+Once the server is set up, you can run it with the following command:
 
 .. code-block:: bash
 
 	litestar --app litestar_pulse:app run --port 7979
 
-To run the server in development mode with auto-reload, use the following command::
+To run the server in development mode with auto-reload, use the following command:
 
 .. code-block:: bash
 
