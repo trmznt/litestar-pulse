@@ -63,6 +63,7 @@ FormInputFactory: TypeAlias = Callable[..., f.BaseInput]
 # .input_field = the InputField() descriptor this proxy is for
 # .form_input = the tagato.BaseInput() instance from the InputField, with options populated
 # .get_value() -> retrieves the current value for this field from the form data or DB object
+# .get_all_values() -> for multi-value fields, retrieves all current values as a list
 # .validate() -> delegates to the InputField's validator
 # .opts() -> forwards display options to the form_input widget
 #
@@ -131,6 +132,23 @@ class _InputFieldProxy:
             return getattr(obj, self.name, "") or ""
         return ""
 
+    def get_all_values(self) -> list[Any]:
+        """For multi-value fields, retrieves all current values as a list."""
+        obj = getattr(self.owner_instance, "obj", None)
+        data = getattr(self.owner_instance, "data")
+
+        if self.name in data:
+            raw_values = data[self.name]
+            if isinstance(raw_values, list):
+                return raw_values
+            else:
+                return [raw_values]
+
+        if obj is not None:
+            related_objs = getattr(obj, self.name, [])
+            return [getattr(related_obj, "id", None) for related_obj in related_objs]
+        return []
+
     def get_options(self) -> list[tuple[int, str]] | None:
         return None
 
@@ -183,8 +201,18 @@ class _InputFieldProxy:
 
     def __tag__(self) -> t.Tag:
         """Tagato rendering protocol — returns the form input widget."""
-        raise NotImplementedError()
+        # raise NotImplementedError()
         return self.form_input
+
+
+class _YamlFieldProxy(_InputFieldProxy):
+    """Proxy for YAMLField — handles YAML validation and transformation."""
+
+    def get_value(self) -> Any:
+        raw_value = super().get_value()
+        if raw_value in (None, ""):
+            return "null"
+        return raw_value
 
 
 class _ForeignKeyInputFieldProxy(_InputFieldProxy):
@@ -683,13 +711,19 @@ class YAMLField(InputField):
         required: bool = False,
         validator: ValidatorFactory = v.YAML,
         forminput: FormInputFactory = f.TextAreaInput,
+        proxy_class: type[_InputFieldProxy] = _YamlFieldProxy,
         **kwargs: Any,
     ) -> None:
         _validator = validator(
             required=required,
             **kwargs,
         )
-        super().__init__(label=label, validator=_validator, forminput=forminput)
+        super().__init__(
+            label=label,
+            validator=_validator,
+            forminput=forminput,
+            proxy_class=proxy_class,
+        )
 
 
 class ForeignKeyField(InputField):
