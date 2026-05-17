@@ -16,7 +16,7 @@ Setting up and running the server
 ---------------------------------
 
 To set up the server, execute the follofing command (assuming the installation directory
-is INST_DIR)::
+is INST_DIR):
 
 .. code-block:: bash
 
@@ -31,13 +31,13 @@ Once the server is set up, you can run it with the following command::
 
 .. code-block:: bash
 
-	litestar --app litestar_pulse.lib.app:init_app run --port 7979
+	litestar --app litestar_pulse:app run --port 7979
 
 To run the server in development mode with auto-reload, use the following command::
 
 .. code-block:: bash
 
-	litestar --app litestar_pulse.lib.app:init_app run --port 7979 --reload --debug --pdb --reload-dir ${VVG_BASEDIR}/envs/tagato
+	litestar --app litestar_pulse:app run --port 7979 --reload --debug --pdb --reload-dir ${VVG_BASEDIR}/envs/tagato
 
 Tests
 -----
